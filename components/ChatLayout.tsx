@@ -67,14 +67,14 @@ export function ChatLayout() {
       let streamingContent = ''
       
       // Send message to AI with streaming callback
-      await ai.sendMessage(content, undefined, (chunk: string) => {
-        streamingContent += chunk
+      await ai.sendMessage(content, undefined, (chunk: string, thinking?: string) => {
+        streamingContent += chunk // Accumulate chunks as they arrive
         
-        // Update the assistant message with new content
+        // Update the assistant message with new content and thinking
         setMessages(prev => 
           prev.map(msg => 
             msg.id === assistantMessageId 
-              ? { ...msg, content: streamingContent }
+              ? { ...msg, content: streamingContent, thinking }
               : msg
           )
         )
@@ -146,14 +146,14 @@ This might be due to:
         let streamingContent = ''
         
         // Send message to AI with streaming callback
-        await ai.sendMessage(userMessage.content, undefined, (chunk: string) => {
-          streamingContent += chunk
+        await ai.sendMessage(userMessage.content, undefined, (chunk: string, thinking?: string) => {
+          streamingContent += chunk // Accumulate chunks as they arrive
           
-          // Update the assistant message with new content
+          // Update the assistant message with new content and thinking
           setMessages(prev => 
             prev.map(msg => 
               msg.id === assistantMessageId 
-                ? { ...msg, content: streamingContent }
+                ? { ...msg, content: streamingContent, thinking }
                 : msg
             )
           )

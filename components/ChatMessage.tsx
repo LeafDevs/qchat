@@ -1,6 +1,6 @@
 "use client"
 
-import { User, Bot, Copy, Check, MoreHorizontal } from "lucide-react"
+import { User, Bot, Copy, Check, MoreHorizontal, Brain } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -17,6 +17,7 @@ export interface Message {
   content: string
   role: 'user' | 'assistant'
   timestamp: Date
+  thinking?: string // For thinking models like o1
 }
 
 interface ChatMessageProps {
@@ -30,6 +31,7 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
   const { theme } = useTheme()
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [copiedMessage, setCopiedMessage] = useState(false)
+  const [showThinking, setShowThinking] = useState(false)
 
   const copyToClipboard = async (text: string, type: 'code' | 'message' = 'code') => {
     try {
@@ -99,9 +101,37 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
               </span>
             </div>
             
+            {/* Thinking toggle button - moved below header */}
+            {message.thinking && (
+              <button
+                onClick={() => setShowThinking(!showThinking)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted/30 transition-colors mb-2 w-fit"
+              >
+                <Brain className="w-3 h-3" />
+                <span>{showThinking ? 'Hide thinking' : 'Show Thinking...'}</span>
+              </button>
+            )}
+            
+            {/* Thinking content with blockquote styling */}
+            {message.thinking && showThinking && (
+              <div className="mb-3 border-l-4 border-muted-foreground/30 pl-4 py-2 bg-muted/10">
+                <div className="flex items-center gap-2 mb-2">
+                  <Brain className="w-3 h-3 text-muted-foreground/60" />
+                  <span className="text-xs font-medium text-muted-foreground/80">Thinking</span>
+                </div>
+                <div className="text-sm text-muted-foreground/90 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:mb-2 [&>p]:leading-relaxed italic">
+                  {message.thinking.split('\n').map((line, index) => (
+                    <div key={index} className="flex">
+                      <span className="flex-1">{line || '\u00A0'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="relative">
               {/* Show streaming indicator for empty assistant messages */}
-              {message.role === 'assistant' && !message.content && (
+              {message.role === 'assistant' && !message.content && !message.thinking && (
                 <div className="flex items-center gap-1 py-2">
                   <motion.div
                     animate={{ scale: [1, 1.2, 1] }}
@@ -119,6 +149,29 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
                     className="w-1.5 h-1.5 bg-muted-foreground/60 rounded-full"
                   />
                   <span className="text-xs text-muted-foreground ml-2">thinking...</span>
+                </div>
+              )}
+
+              {/* Show thinking indicator when we have thinking but no content yet */}
+              {message.role === 'assistant' && !message.content && message.thinking && (
+                <div className="flex items-center gap-1 py-2">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    className="w-3 h-3 rounded-full bg-orange-500/20 flex items-center justify-center"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                  </motion.div>
+                  <span className="text-xs text-muted-foreground ml-2">deep thinking...</span>
+                  {message.thinking && (
+                    <button
+                      onClick={() => setShowThinking(!showThinking)}
+                      className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-400 px-2 py-0.5 rounded-md hover:bg-orange-500/10 transition-colors ml-2"
+                    >
+                      <Brain className="w-2.5 h-2.5" />
+                      <span>{showThinking ? 'Hide thinking' : 'Show Thinking...'}</span>
+                    </button>
+                  )}
                 </div>
               )}
               
@@ -234,7 +287,6 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
                     className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
                     title="More actions"
                   >
-                    <MoreHorizontal className="w-2.5 h-2.5" />
                     <span className="hidden sm:inline">More</span>
                   </button>
                 </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { Bot } from "lucide-react"
+import { Bot, ArrowDown } from "lucide-react"
 import React, { useRef, useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { ChatMessage, type Message } from "./ChatMessage"
@@ -65,7 +65,10 @@ interface ChatMessagesProps {
 
 export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availableModels }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [internalProviders, setInternalProviders] = useState<ModelProvider[]>(DEFAULT_PROVIDERS)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [showScrollButton, setShowScrollButton] = useState(false)
 
   // Fetch Ollama models
   useEffect(() => {
@@ -97,16 +100,51 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  useEffect(() => {
+  const handleScrollToBottom = () => {
     scrollToBottom()
-  }, [messages, isLoading])
+    setIsAtBottom(true) // Manually set to bottom state
+  }
+
+  // Check if user is at bottom and update scroll state
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return
+    
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 50
+    
+    setIsAtBottom(isNearBottom)
+    setShowScrollButton(!isNearBottom && messages.length > 0)
+  }
+
+  // Initialize scroll position check on mount
+  useEffect(() => {
+    // Small delay to ensure content is rendered
+    const timer = setTimeout(() => {
+      handleScroll()
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Only auto-scroll when user is at bottom
+  useEffect(() => {
+    // Auto-scroll only if user is at bottom or if starting a new conversation
+    if (isAtBottom || isLoading) {
+      scrollToBottom()
+    }
+  }, [messages, isLoading, isAtBottom])
 
   // Use provided models or fall back to internal providers
   const modelsToUse = availableModels || internalProviders
 
   return (
-    <div className="flex-1 overflow-y-auto overscroll-behavior-contain">
-      <div className="max-w-full sm:max-w-6xl mx-auto">
+    <div className="relative flex-1">
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overscroll-behavior-contain h-full"
+      >
+        <div className="max-w-full sm:max-w-6xl mx-auto">
         {messages.length === 0 && !isLoading ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -144,7 +182,25 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
             <div ref={messagesEndRef} />
           </div>
         )}
+        </div>
       </div>
+      
+      {/* Scroll to bottom button */}
+      <AnimatePresence>
+        {showScrollButton && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 20 }}
+            transition={{ duration: 0.2 }}
+            onClick={handleScrollToBottom}
+            className="absolute bottom-4 right-4 bg-background border border-border rounded-full p-2 shadow-lg hover:shadow-xl transition-shadow z-10"
+            title="Scroll to bottom"
+          >
+            <ArrowDown className="w-4 h-4" />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

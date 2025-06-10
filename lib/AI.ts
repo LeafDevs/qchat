@@ -78,7 +78,7 @@ export class AI {
         this.customModel = customModel;
     }
 
-    sendMessage(message: string, sys_prompt?: string, onChunk?: (chunk: string) => void): Promise<string> {
+    sendMessage(message: string, sys_prompt?: string, onChunk?: (chunk: string, thinking?: string) => void): Promise<string> {
         return new Promise(async (resolve, reject) => {
             try {
                 if (this.provider === "Ollama") {
@@ -105,6 +105,11 @@ export class AI {
                     }
 
                     let fullResponse = '';
+                    let thinkingContent = '';
+                    let actualContent = '';
+                    let inThinking = false;
+                    let thinkingComplete = false;
+                    
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
@@ -117,9 +122,43 @@ export class AI {
                                 const data = JSON.parse(line);
                                 if (data.response) {
                                     fullResponse += data.response;
-                                    // Call the streaming callback if provided
-                                    if (onChunk) {
-                                        onChunk(data.response);
+                                    
+                                    // Check for thinking tags
+                                    if (!thinkingComplete) {
+                                        if (fullResponse.startsWith('<think>')) {
+                                            inThinking = true;
+                                        }
+                                        
+                                        if (inThinking) {
+                                            const thinkEndIndex = fullResponse.indexOf('</think>');
+                                            if (thinkEndIndex !== -1) {
+                                                // Extract thinking content (without tags)
+                                                thinkingContent = fullResponse.substring(7, thinkEndIndex); // Skip '<think>'
+                                                actualContent = fullResponse.substring(thinkEndIndex + 8); // Skip '</think>'
+                                                thinkingComplete = true;
+                                                inThinking = false;
+                                                
+                                                // Call callback with the new actual content chunk and thinking
+                                                if (onChunk && actualContent) {
+                                                    onChunk(actualContent, thinkingContent);
+                                                }
+                                            } else {
+                                                // Still in thinking mode, don't send content yet
+                                                if (onChunk) {
+                                                    onChunk('', thinkingContent); // Send empty content but current thinking
+                                                }
+                                            }
+                                        } else {
+                                            // No thinking tags detected, send content normally
+                                            if (onChunk) {
+                                                onChunk(data.response);
+                                            }
+                                        }
+                                    } else {
+                                        // Thinking is complete, send just the new chunk
+                                        if (onChunk) {
+                                            onChunk(data.response, thinkingContent);
+                                        }
                                     }
                                 }
                             } catch (e) {
@@ -134,11 +173,39 @@ export class AI {
                     const providerName = this.provider;
                     const modelName = this.nameFromModel() || this.model;
                     
-                    const fullResponse = `Hello! I'm responding as **${modelName}** from **${providerName}**.
+                    // Create a thinking response for some providers to demonstrate the feature
+                    const shouldIncludeThinking = providerName === 'OpenAI' && message.toLowerCase().includes('think');
+                    
+                    const fullResponse = shouldIncludeThinking 
+                        ? `<think>
+The user is asking me to think about something. Since this is a demonstration of thinking models, I should show my reasoning process.
+
+Let me analyze their message: "${message}"
+
+This appears to be a request that would benefit from showing my thought process. I should:
+1. Acknowledge their request
+2. Show that I'm processing the information
+3. Provide a thoughtful response
+
+Since this is a placeholder implementation, I'll demonstrate how thinking models work by showing this internal reasoning, then provide a helpful response.
+</think>
+
+Hello! I'm responding as **${modelName}** from **${providerName}**.
+
+I can see you mentioned "think" in your message, so I've demonstrated the thinking model feature. You should see a "Show thinking" button above that reveals my internal reasoning process.
+
+**Your message:** *"${message}"*
+
+This thinking model feature allows AI systems to show their reasoning process before arriving at a final answer, similar to how OpenAI's o1 models work.
+
+**Note:** This is currently a placeholder response. The actual ${providerName} API integration is not yet implemented. Currently, only Ollama is fully functional.`
+                        : `Hello! I'm responding as **${modelName}** from **${providerName}**.
 
 I understand you said: *"${message}"*
 
 **Note:** This is currently a placeholder response. The actual ${providerName} API integration is not yet implemented. Currently, only Ollama is fully functional.
+
+To test the thinking feature, try asking OpenAI to "think about" something.
 
 To test the system:
 1. Install and run Ollama locally
@@ -149,17 +216,40 @@ The system will automatically use the real AI provider once their APIs are prope
 
                     // Simulate streaming by sending chunks with small delays
                     if (onChunk) {
-                        const words = fullResponse.split(' ');
-                        let accumulatedContent = '';
-                        
-                        for (let i = 0; i < words.length; i++) {
-                            const word = words[i] + (i < words.length - 1 ? ' ' : '');
-                            accumulatedContent += word;
+                        // Check if response has thinking tags
+                        if (fullResponse.includes('<think>') && fullResponse.includes('</think>')) {
+                            const thinkStart = fullResponse.indexOf('<think>');
+                            const thinkEnd = fullResponse.indexOf('</think>');
+                            const thinkingContent = fullResponse.substring(thinkStart + 7, thinkEnd);
+                            const actualContent = fullResponse.substring(thinkEnd + 8);
                             
-                            // Send chunks of 2-3 words at a time for faster streaming
-                            if (i % 3 === 0 || i === words.length - 1) {
-                                const contentToSend = accumulatedContent;
-                                setTimeout(() => onChunk(contentToSend), i * 25); // Faster delays
+                            // First, send empty content with thinking
+                            setTimeout(() => onChunk('', thinkingContent), 100);
+                            
+                            // Then simulate thinking time, then stream actual content
+                            setTimeout(() => {
+                                const words = actualContent.split(' ');
+                                
+                                for (let i = 0; i < words.length; i++) {
+                                    // Send chunks of 2-3 words at a time
+                                    if (i % 3 === 0 || i === words.length - 1) {
+                                        const chunkWords = words.slice(Math.max(0, i-2), i+1).join(' ') + (i === words.length - 1 ? '' : ' ');
+                                        setTimeout(() => onChunk(chunkWords, thinkingContent), i * 25);
+                                    }
+                                }
+                            }, 1000); // 1 second thinking delay
+                        } else {
+                            // Normal streaming without thinking
+                            const words = fullResponse.split(' ');
+                            
+                            for (let i = 0; i < words.length; i++) {
+                                const word = words[i] + (i < words.length - 1 ? ' ' : '');
+                                
+                                // Send chunks of 2-3 words at a time for faster streaming
+                                if (i % 3 === 0 || i === words.length - 1) {
+                                    const chunkWords = words.slice(Math.max(0, i-2), i+1).join(' ');
+                                    setTimeout(() => onChunk(chunkWords), i * 25); // Send word chunks
+                                }
                             }
                         }
                     }
