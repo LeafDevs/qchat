@@ -1,52 +1,24 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import React, { useRef, useState, useEffect } from "react"
+import React, { useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { DEFAULT_PROVIDERS, type ModelProvider } from "./ProviderIcons"
 import { ModelSelectorDropdown } from "./ModelSelectorDropdown"
+import { type ModelConfig } from "@/lib/AI"
+import { ArrowUp } from "lucide-react"
 
 interface ChatInputProps {
   onSubmit: (message: string) => void
   isLoading?: boolean
   currentModel: string
   onModelChange: (model: string) => void
+  availableModels?: ModelConfig[]
 }
 
-export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange }: ChatInputProps) {
+export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange, availableModels }: ChatInputProps) {
   const [input, setInput] = useState('')
   const [isFocused, setIsFocused] = useState(false)
-  const [providers, setProviders] = useState<ModelProvider[]>(DEFAULT_PROVIDERS)
-  
   const inputRef = useRef<HTMLTextAreaElement>(null)
-
-  // Fetch Ollama models
-  useEffect(() => {
-    const fetchOllamaModels = async () => {
-      try {
-        const response = await fetch('http://localhost:11434/api/tags')
-        const data = await response.json()
-        const ollamaModels = data.models?.map((model: any) => ({
-          id: `ollama:${model.name}`,
-          name: model.name
-        })) || []
-        
-        setProviders(prev => 
-          prev.map(provider => 
-            provider.name === 'Ollama' 
-              ? { ...provider, models: ollamaModels }
-              : provider
-          )
-        )
-      } catch (error) {
-        console.warn('Could not fetch Ollama models:', error)
-      }
-    }
-    
-    fetchOllamaModels()
-  }, [])
-
-
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,8 +42,6 @@ export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange }: 
     }
   }, [input])
 
-
-
   return (
     <motion.div
       initial={{ y: 20, opacity: 0 }}
@@ -79,74 +49,81 @@ export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange }: 
       transition={{ duration: 0.3 }}
       className="border-t bg-background/80 backdrop-blur-sm sticky bottom-0"
     >
-      <div className="max-w-full sm:max-w-6xl mx-auto px-3 sm:px-6 py-3">
+      <div className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 py-3">
         <form onSubmit={handleSubmit} className="relative">
           <motion.div
             animate={{
-              borderColor: isFocused ? 'rgb(59 130 246)' : 'transparent',
-              boxShadow: isFocused ? '0 0 0 1px rgb(59 130 246 / 0.3)' : 'none'
+              borderColor: isFocused ? 'var(--primary)' : 'var(--border)',
+              boxShadow: isFocused ? '0 0 0 1px var(--ring)' : 'none'
             }}
             transition={{ duration: 0.2 }}
             className={cn(
-              "flex items-end gap-2 bg-muted/50 rounded-lg p-2 transition-all duration-200",
-              isFocused && "bg-muted/70"
+              "flex flex-col w-full bg-background/70 border border-border  rounded-3xl p-3 shadow-sm backdrop-blur-md transition-all duration-200",
+              isFocused && "ring-2 ring-primary/50"
             )}
           >
-            {/* Model Selector */}
-            <ModelSelectorDropdown 
-              currentModel={currentModel}
-              onModelChange={onModelChange}
-              providers={providers}
-            />
+            <div className="flex w-full items-end gap-2">
 
-            {/* Input */}
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              placeholder="Type your message..."
-              className="flex-1 bg-transparent text-sm resize-none focus:outline-none min-h-[32px] max-h-[120px] py-1 placeholder:text-muted-foreground/60"
-              disabled={isLoading}
-              rows={1}
-            />
+              {/* Input */}
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                placeholder="Type your message..."
+                className="flex-1 bg-transparent text-sm resize-none focus:outline-none min-h-[32px] max-h-[120px] py-1 placeholder:text-muted-foreground/50"
+                disabled={isLoading}
+                rows={1}
+              />
 
-            {/* Send Button */}
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              className={cn(
-                "px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 self-end",
-                input.trim() && !isLoading
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
-                  : "bg-muted text-muted-foreground cursor-not-allowed"
-              )}
-            >
-              <AnimatePresence mode="wait">
-                {isLoading ? (
-                  <motion.div
-                    key="loading"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
-                  />
-                ) : (
-                  <motion.span
-                    key="send"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                  >
-                    Send
-                  </motion.span>
+              {/* Send Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                type="submit"
+                disabled={isLoading || !input.trim()}
+                className={cn(
+                  "flex items-center justify-center w-10 h-10 rounded-full transition-colors duration-200",
+                  input.trim() && !isLoading
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                    : "bg-muted text-muted-foreground cursor-not-allowed"
                 )}
-              </AnimatePresence>
-            </motion.button>
+              >
+                <AnimatePresence mode="wait">
+                  {isLoading ? (
+                    <motion.div
+                      key="loading"
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+                    />
+                  ) : (
+                    <motion.span
+                      key="send"
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                    >
+                      <ArrowUp className="w-4 h-4" />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </motion.button>
+            </div>
+
+            {/* Footer controls */}
+            <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground px-1">
+              <ModelSelectorDropdown 
+                currentModel={currentModel}
+                onModelChange={onModelChange}
+              />
+              <div>
+                {/* Placeholder for extra options */}
+              </div>
+            </div>
           </motion.div>
         </form>
         
@@ -162,4 +139,4 @@ export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange }: 
       </div>
     </motion.div>
   )
-} 
+}

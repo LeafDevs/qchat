@@ -1,0 +1,120 @@
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+
+// Open a SQLite database connection
+const dbPromise = open({
+  filename: 'auth.sqlite',
+  driver: sqlite3.Database
+});
+
+// Ensure tables exist before any operation
+async function ensureTables() {
+  const db = await dbPromise;
+  
+  // First, check if the status column exists in the message table
+  const messageTableInfo = await db.all("PRAGMA table_info(message)");
+  const hasStatusColumn = messageTableInfo.some((col: any) => col.name === 'status');
+
+  // Check for model column
+  const hasModelColumn = messageTableInfo.some((col: any) => col.name === 'model');
+
+  // Add CREATE TABLE IF NOT EXISTS statements for all required tables
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS user (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE,
+      name TEXT,
+      createdAt DATETIME,
+      updatedAt DATETIME
+    );
+    CREATE TABLE IF NOT EXISTS chat (
+      id TEXT PRIMARY KEY,
+      createdBy TEXT,
+      model TEXT,
+      createdAt DATETIME,
+      updatedAt DATETIME
+    );
+    CREATE TABLE IF NOT EXISTS message (
+      id TEXT PRIMARY KEY,
+      chatId TEXT,
+      content TEXT,
+      role TEXT,
+      status TEXT DEFAULT 'complete',
+      createdAt DATETIME,
+      updatedAt DATETIME,
+      FOREIGN KEY (chatId) REFERENCES chat(id)
+    );
+    CREATE TABLE IF NOT EXISTS chatParticipant (
+      id TEXT PRIMARY KEY,
+      chatId TEXT,
+      userId TEXT,
+      joinedAt DATETIME,
+      FOREIGN KEY (chatId) REFERENCES chat(id),
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
+    CREATE TABLE IF NOT EXISTS session (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      expiresAt DATETIME,
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
+    CREATE TABLE IF NOT EXISTS account (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      provider TEXT,
+      providerAccountId TEXT,
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
+    CREATE TABLE IF NOT EXISTS verification (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      token TEXT,
+      expiresAt DATETIME,
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
+  `);
+
+  // If the status column doesn't exist, add it
+  if (!hasStatusColumn) {
+    try {
+      await db.exec(`
+        ALTER TABLE message ADD COLUMN status TEXT DEFAULT 'complete';
+        UPDATE message SET status = 'complete' WHERE status IS NULL;
+      `);
+      console.log('Added status column to message table');
+    } catch (error) {
+      console.error('Error adding status column:', error);
+    }
+  }
+
+  // If the model column doesn't exist, add it
+  if (!hasModelColumn) {
+    try {
+      await db.exec(`
+        ALTER TABLE message ADD COLUMN model TEXT;
+      `);
+      console.log('Added model column to message table');
+    } catch (error) {
+      console.error('Error adding model column:', error);
+    }
+  }
+}
+
+// Initialize tables
+ensureTables().catch(console.error);
+
+// Export a db object that can be used to run SQL queries
+export const db = {
+  async get(sql: string, params: any[] = []) {
+    const db = await dbPromise;
+    return db.get(sql, params);
+  },
+  async all(sql: string, params: any[] = []) {
+    const db = await dbPromise;
+    return db.all(sql, params);
+  },
+  async run(sql: string, params: any[] = []) {
+    const db = await dbPromise;
+    return db.run(sql, params);
+  }
+}; 

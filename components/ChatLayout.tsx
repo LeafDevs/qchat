@@ -2,207 +2,213 @@
 
 import { ChatMessages, ChatInput } from "@/components/Chat";
 import { type Message } from "@/components/ChatMessage";
-import { useState, useEffect } from "react";
-import { AI } from "@/lib/AI";
+import { useState, useEffect, useRef } from "react";
+import { useSession } from "@/lib/auth-client";
 
-export function ChatLayout() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [currentModel, setCurrentModel] = useState('openai:gpt-4o-mini')
+interface ChatLayoutProps {
+  initialChatId?: string;
+  initialMessages?: Message[];
+}
+
+export function ChatLayout({ initialChatId, initialMessages = [] }: ChatLayoutProps) {
+  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [currentModel, setCurrentModel] = useState('gpt-4.1')
   const [isLoading, setIsLoading] = useState(false)
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [ai] = useState(() => new AI())
+  const [error, setError] = useState<string | null>(null)
+  const [chatId, setChatId] = useState<string | null>(initialChatId || null)
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
+  const lastContentRef = useRef<{ [key: string]: string }>({})
 
-  // Helper function to parse model ID and configure AI
-  const configureAI = (modelId: string) => {
-    // Parse provider:model format (e.g., "openai:gpt-4o-mini", "ollama:llama2:7b-chat")
-    const parts = modelId.split(':')
-    const provider = parts[0] || 'OpenAI'
-    const model = parts.slice(1).join(':') || 'gpt-4o-mini'
-    
-    // Map provider names to match AI class expectations
-    const providerMap: { [key: string]: string } = {
-      'openai': 'OpenAI',
-      'anthropic': 'Anthropic', 
-      'google': 'Google',
-      'ollama': 'Ollama',
-      'openrouter': 'OpenRouter'
-    }
-    
-    const mappedProvider = providerMap[provider.toLowerCase()] || provider
-    
-    ai.setProvider(mappedProvider)
-    ai.setModel(model)
-    
-    return { provider: mappedProvider, model }
-  }
+  const { data: session } = useSession()
+  const userId = session?.user?.id
 
-  const handleSendMessage = async (content: string) => {
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content,
-      role: 'user',
-      timestamp: new Date()
+  const providerName = currentModel.split('-')[0].toLowerCase() || 'openai';
+
+  const handleSendMessage = async (messageContent: string) => {
+    if (!userId) {
+      setError("You must be signed in to chat.")
+      return
     }
 
-    setMessages(prev => [...prev, userMessage])
-    setIsLoading(true)
-
-    // Create initial assistant message for streaming
-    const assistantMessageId = (Date.now() + 1).toString()
-    const initialAssistantMessage: Message = {
-      id: assistantMessageId,
-      content: '',
-      role: 'assistant',
-      timestamp: new Date()
+    let activeChatId = chatId
+    if (!activeChatId) {
+      // Create a new chat
+      const res = await fetch('/api/chat/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, model: currentModel }),
+      })
+      const data = await res.json()
+      activeChatId = data.chatId
+      setChatId(activeChatId)
     }
-    
-    setMessages(prev => [...prev, initialAssistantMessage])
-    setIsLoading(false) // Set loading to false since we're now streaming
-    setIsStreaming(true)
 
     try {
-      // Configure AI with current model
-      const { provider, model } = configureAI(currentModel)
-      
-      let streamingContent = ''
-      
-      // Send message to AI with streaming callback
-      await ai.sendMessage(content, undefined, (chunk: string, thinking?: string) => {
-        streamingContent += chunk // Accumulate chunks as they arrive
-        
-        // Update the assistant message with new content and thinking
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === assistantMessageId 
-              ? { ...msg, content: streamingContent, thinking }
-              : msg
-          )
-        )
-      })
-      
-    } catch (error) {
-      console.error('Error sending message:', error)
-      
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        content: `Sorry, I encountered an error while processing your message. Please try again.
+      setError(null)
+      setIsLoading(true)
 
-**Error details:** ${error instanceof Error ? error.message : 'Unknown error'}
-
-This might be due to:
-- Network connectivity issues
-- API key not configured
-- Model not available
-- Server temporarily unavailable`,
-        role: 'assistant',
-        timestamp: new Date()
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: messageContent,
+        timestamp: new Date(),
+        model: currentModel
       }
-      
-      // Replace the streaming message with error message
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === assistantMessageId ? errorMessage : msg
-        )
-      )
+      setMessages(prev => [...prev, userMessage])
+
+      // Create initial assistant message
+      const assistantMessageId = crypto.randomUUID();
+      const initialAssistantMessage: Message = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        thinking: '',
+        model: currentModel
+      }
+      setMessages(prev => [...prev, initialAssistantMessage])
+      setStreamingMessageId(assistantMessageId)
+      lastContentRef.current[assistantMessageId] = '';
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: currentModel,
+          prompt: messageContent,
+          chatId: activeChatId,
+          userId,
+          messageId: assistantMessageId
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get response')
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No reader available');
+
+      let assistantResponse = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = new TextDecoder().decode(value);
+        assistantResponse += text;
+        lastContentRef.current[assistantMessageId] = assistantResponse;
+      setMessages(prev => prev.map(msg => 
+        msg.id === assistantMessageId
+            ? { ...msg, content: assistantResponse }
+          : msg
+        ));
+      }
+
+      setStreamingMessageId(null);
+    } catch (error) {
+      console.error('Error in chat:', error)
+      setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
-      setIsStreaming(false)
+      setIsLoading(false)
     }
   }
 
-  const handleRetry = async (messageId: string, newModel?: string) => {
-    // Find the message being retried
-    const messageIndex = messages.findIndex(msg => msg.id === messageId)
-    if (messageIndex === -1) return
+  const handleRetry = async (originalAssistantId: string, newModel?: string) => {
+    // Find prompt before the selected assistant message
+    const index = messages.findIndex(m => m.id === originalAssistantId);
+    if (index === -1) return;
+    const promptMessage = messages.slice(0, index).reverse().find(m => m.role === 'user');
+    if (!promptMessage) return;
 
-    // Update current model if a new one was selected
-    const modelToUse = newModel || currentModel
-    if (newModel) {
-      setCurrentModel(newModel)
-    }
+    const modelToUse = newModel || currentModel;
 
-    // Remove all messages after the retried message
-    const updatedMessages = messages.slice(0, messageIndex)
-    setMessages(updatedMessages)
-    
-    // Get the previous user message to retry
-    const userMessage = updatedMessages[updatedMessages.length - 1]
-    if (userMessage && userMessage.role === 'user') {
-      // Create initial assistant message for streaming
-      const assistantMessageId = Date.now().toString()
-      const initialAssistantMessage: Message = {
-        id: assistantMessageId,
-        content: '',
-        role: 'assistant',
-        timestamp: new Date()
-      }
-      
-      setMessages(prev => [...prev, initialAssistantMessage])
-      setIsStreaming(true)
-      
-      try {
-        // Configure AI with the model to use for retry
-        const { provider, model } = configureAI(modelToUse)
-        
-        let streamingContent = ''
-        
-        // Send message to AI with streaming callback
-        await ai.sendMessage(userMessage.content, undefined, (chunk: string, thinking?: string) => {
-          streamingContent += chunk // Accumulate chunks as they arrive
-          
-          // Update the assistant message with new content and thinking
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === assistantMessageId 
-                ? { ...msg, content: streamingContent, thinking }
-                : msg
-            )
-          )
+    // Create a new assistant message placeholder
+    const retryAssistantId = crypto.randomUUID();
+    const placeholder: Message = {
+      id: retryAssistantId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      model: modelToUse
+    };
+
+    setMessages(prev => {
+      const newMsgs = [...prev];
+      newMsgs.splice(index + 1, 0, placeholder);
+      return newMsgs;
+    });
+    setStreamingMessageId(retryAssistantId);
+    lastContentRef.current[retryAssistantId] = '';
+
+    try {
+      setError(null);
+      setIsLoading(true);
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelToUse,
+          prompt: promptMessage.content,
+          chatId: chatId,
+          userId,
+          messageId: retryAssistantId
         })
-        
-      } catch (error) {
-        console.error('Error retrying message:', error)
-        
-        const errorMessage: Message = {
-          id: Date.now().toString(),
-          content: `Sorry, I encountered an error while retrying your message. Please try again.
+      });
 
-**Error details:** ${error instanceof Error ? error.message : 'Unknown error'}
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to retry');
+      }
 
-This might be due to:
-- Network connectivity issues
-- API key not configured  
-- Model not available
-- Server temporarily unavailable`,
-          role: 'assistant',
-          timestamp: new Date()
-        }
-        
-        // Replace the streaming message with error message
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === assistantMessageId ? errorMessage : msg
-                     )
-         )
-       } finally {
-         setIsStreaming(false)
-       }
-     }
-   }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No reader available');
+      let assistantResponse = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = new TextDecoder().decode(value);
+        assistantResponse += text;
+        lastContentRef.current[retryAssistantId] = assistantResponse;
+        setMessages(prev => prev.map(m => m.id === retryAssistantId ? { ...m, content: assistantResponse } : m));
+      }
+      setStreamingMessageId(null);
+    } catch (err) {
+      console.error('Retry error:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <ChatMessages 
-        messages={messages} 
-        isLoading={isLoading} 
-        isStreaming={isStreaming}
-        onRetry={handleRetry}
-      />
-      <ChatInput 
-        onSubmit={handleSendMessage} 
-        isLoading={isLoading}
-        currentModel={currentModel}
-        onModelChange={setCurrentModel}
-      />
+    <div className="flex flex-col h-full">
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 text-sm">
+          {error}
+        </div>
+      )}
+      <div className="flex-1 p-4 min-h-0">
+        <ChatMessages 
+          messages={messages} 
+          isLoading={isLoading}
+          isStreaming={!!streamingMessageId}
+          onRetry={handleRetry}
+          modelName={currentModel}
+          provider={providerName as string}
+        />
+      </div>
+      
+      <div className="border-t p-4">
+        <div className="max-w-3xl mx-auto">
+          <ChatInput 
+            onSubmit={handleSendMessage}
+            isLoading={isLoading}
+            currentModel={currentModel}
+            onModelChange={setCurrentModel}
+          />
+        </div>
+      </div>
     </div>
   )
 } 

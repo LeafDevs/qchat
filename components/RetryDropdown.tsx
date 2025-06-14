@@ -1,6 +1,7 @@
 "use client"
 
 import { RotateCcw } from "lucide-react"
+import { Models } from "@/lib/AI"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,14 +12,26 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ProviderIcon, formatModelName, type ModelProvider } from "./ProviderIcons"
+import { ProviderIcon } from "./ProviderIcons"
 
 interface RetryDropdownProps {
   onRetry: (newModel?: string) => void
-  availableModels: ModelProvider[]
 }
 
-export function RetryDropdown({ onRetry, availableModels }: RetryDropdownProps) {
+export function RetryDropdown({ onRetry }: RetryDropdownProps) {
+  // Group models by provider
+  const groupedModels = Models.reduce((acc, model) => {
+    const provider = model.provider;
+    if (!acc[provider]) {
+      acc[provider] = [];
+    }
+    acc[provider].push({
+      id: model.model,
+      name: model.model
+    });
+    return acc;
+  }, {} as Record<string, { id: string; name: string }[]>);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -31,32 +44,24 @@ export function RetryDropdown({ onRetry, availableModels }: RetryDropdownProps) 
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-56">
-        {availableModels?.map((provider) => 
-          provider.models.length > 0 ? (
-            <DropdownMenuSub key={provider.name}>
-              <DropdownMenuSubTrigger className="flex items-center gap-2">
-                <ProviderIcon provider={provider.name} />
-                <span>{provider.name}</span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                {provider.models.map((model) => (
-                  <DropdownMenuItem
-                    key={model.id}
-                    onClick={() => onRetry(model.id)}
-                  >
-                    {formatModelName(model.name, provider.name)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ) : (
-            <DropdownMenuItem key={provider.name} disabled>
-              <ProviderIcon provider={provider.name} />
-              <span>{provider.name}</span>
-              <span className="ml-auto text-xs text-muted-foreground">No models</span>
-            </DropdownMenuItem>
-          )
-        )}
+        {Object.entries(groupedModels).map(([provider, models]) => (
+          <DropdownMenuSub key={provider}>
+            <DropdownMenuSubTrigger className="flex items-center gap-2">
+              <ProviderIcon provider={provider.toLowerCase()} />
+              <span>{provider}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {models.map((model) => (
+                <DropdownMenuItem
+                  key={model.id}
+                  onClick={() => onRetry(model.id)}
+                >
+                  {model.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => onRetry()}>
           <RotateCcw className="w-4 h-4" />
@@ -67,5 +72,5 @@ export function RetryDropdown({ onRetry, availableModels }: RetryDropdownProps) 
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 } 

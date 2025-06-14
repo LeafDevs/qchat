@@ -5,7 +5,7 @@ import React, { useRef, useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { ChatMessage, type Message } from "./ChatMessage"
 import { ChatInput } from "./ChatInput"
-import { DEFAULT_PROVIDERS, type ModelProvider } from "./ProviderIcons"
+import { Models, type ModelConfig } from "@/lib/AI"
 
 // Loading message component
 function LoadingMessage() {
@@ -17,7 +17,7 @@ function LoadingMessage() {
       transition={{ duration: 0.3 }}
       className="group px-3 sm:px-6 py-4 sm:py-6"
     >
-      <div className="max-w-full sm:max-w-6xl mx-auto">
+      <div className="max-w-full sm:max-w-7xl mx-auto">
         <div className="flex gap-3 sm:gap-4 rounded-lg p-3 sm:p-4 bg-muted/30">
           <div className="flex-shrink-0">
             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white font-medium text-sm bg-gradient-to-br from-green-500 to-green-600">
@@ -60,41 +60,15 @@ interface ChatMessagesProps {
   isLoading?: boolean
   isStreaming?: boolean
   onRetry?: (messageId: string, newModel?: string) => void
-  availableModels?: ModelProvider[]
+  modelName: string
+  provider: string
 }
 
-export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availableModels }: ChatMessagesProps) {
+export function ChatMessages({ messages, isLoading, isStreaming, onRetry, modelName, provider }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [internalProviders, setInternalProviders] = useState<ModelProvider[]>(DEFAULT_PROVIDERS)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [showScrollButton, setShowScrollButton] = useState(false)
-
-  // Fetch Ollama models
-  useEffect(() => {
-    const fetchOllamaModels = async () => {
-      try {
-        const response = await fetch('http://localhost:11434/api/tags')
-        const data = await response.json()
-        const ollamaModels = data.models?.map((model: any) => ({
-          id: `ollama:${model.name}`,
-          name: model.name
-        })) || []
-        
-        setInternalProviders(prev => 
-          prev.map(provider => 
-            provider.name === 'Ollama' 
-              ? { ...provider, models: ollamaModels }
-              : provider
-          )
-        )
-      } catch (error) {
-        console.warn('Could not fetch Ollama models:', error)
-      }
-    }
-    
-    fetchOllamaModels()
-  }, [])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -102,10 +76,9 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
 
   const handleScrollToBottom = () => {
     scrollToBottom()
-    setIsAtBottom(true) // Manually set to bottom state
+    setIsAtBottom(true)
   }
 
-  // Check if user is at bottom and update scroll state
   const handleScroll = () => {
     if (!scrollContainerRef.current) return
     
@@ -116,9 +89,7 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
     setShowScrollButton(!isNearBottom && messages.length > 0)
   }
 
-  // Initialize scroll position check on mount
   useEffect(() => {
-    // Small delay to ensure content is rendered
     const timer = setTimeout(() => {
       handleScroll()
     }, 100)
@@ -126,16 +97,19 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
     return () => clearTimeout(timer)
   }, [])
 
-  // Only auto-scroll when user is at bottom
   useEffect(() => {
-    // Auto-scroll only if user is at bottom or if starting a new conversation
     if (isAtBottom || isLoading) {
       scrollToBottom()
     }
   }, [messages, isLoading, isAtBottom])
 
-  // Use provided models or fall back to internal providers
-  const modelsToUse = availableModels || internalProviders
+  useEffect(() => {
+    // Always attempt to scroll to bottom when messages change to ensure visibility
+    const timeout = setTimeout(() => {
+      scrollToBottom();
+    }, 50);
+    return () => clearTimeout(timeout);
+  }, [messages]);
 
   return (
     <div className="relative flex-1">
@@ -144,7 +118,7 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto overscroll-behavior-contain h-full"
       >
-        <div className="max-w-full sm:max-w-6xl mx-auto">
+        <div className="max-w-full sm:max-w-7xl mx-auto">
         {messages.length === 0 && !isLoading ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -174,10 +148,11 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
                   message={message}
                   isLast={index === messages.length - 1 && !isLoading}
                   onRetry={onRetry}
-                  availableModels={modelsToUse}
+                  modelName={modelName}
+                  provider={provider}
                 />
               ))}
-              {isLoading && <LoadingMessage key="loading" />}
+              {isLoading && !isStreaming && <LoadingMessage key="loading" />}
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>
@@ -185,7 +160,6 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
         </div>
       </div>
       
-      {/* Scroll to bottom button */}
       <AnimatePresence>
         {showScrollButton && (
           <motion.button
@@ -205,5 +179,4 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, availa
   )
 }
 
-// Export the ChatInput component for use in other files
-export { ChatInput } 
+export { ChatInput }

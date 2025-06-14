@@ -1,37 +1,54 @@
 "use client"
 
 import { User, Bot, Copy, Check, MoreHorizontal, Brain } from "lucide-react"
+import { ProviderIcon } from "./ProviderIcons"
 import { cn } from "@/lib/utils"
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { motion } from "framer-motion"
 import { RetryDropdown } from "./RetryDropdown"
-import { type ModelProvider } from "./ProviderIcons"
+import { ModelProviders } from "@/lib/AI"
+import { useSession } from "@/lib/auth-client"
 
 export interface Message {
   id: string
+  role: 'user' | 'assistant' | 'system'
   content: string
-  role: 'user' | 'assistant'
   timestamp: Date
   thinking?: string // For thinking models like o1
+  model?: string
 }
 
 interface ChatMessageProps {
   message: Message
   isLast?: boolean
   onRetry?: (messageId: string, newModel?: string) => void
-  availableModels?: ModelProvider[]
+  modelName: string
+  provider: string
 }
 
-export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatMessageProps) {
+export function ChatMessage({ message, isLast, onRetry, modelName, provider }: ChatMessageProps) {
   const { theme } = useTheme()
+  const session = useSession().data
+  const userName = session?.user?.name || 'You'
+  const userImage = session?.user?.image
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [copiedMessage, setCopiedMessage] = useState(false)
-  const [showThinking, setShowThinking] = useState(false)
+  const [showThinking, setShowThinking] = useState(true) // Default to true to show thinking initially
+  const [isVisible, setIsVisible] = useState(false)
+
+  useEffect(() => {
+    setIsVisible(true)
+  }, [])
+
+  // Extract thinking content from message
+  const thinkingMatch = message.content.match(/<think>([\s\S]*?)<\/think>/);
+  const thinkingContent = thinkingMatch ? thinkingMatch[1].trim() : '';
+  const displayContent = message.content.replace(/<think>[\s\S]*?<\/think>/, '');
 
   const copyToClipboard = async (text: string, type: 'code' | 'message' = 'code') => {
     try {
@@ -54,6 +71,10 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
     }
   }
 
+  if (!isVisible) {
+    return null
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -64,6 +85,7 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
         isLast && "mb-2"
       )}
     >
+      {/* Rest of the component remains unchanged */}
       <div className="max-w-full sm:max-w-6xl mx-auto">
         <div className={cn(
           "flex gap-3 sm:gap-4 rounded-lg p-2 sm:p-3 transition-colors duration-200",
@@ -71,38 +93,40 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
             ? "bg-transparent hover:bg-muted/20" 
             : "bg-muted/30 hover:bg-muted/40"
         )}>
+          {/* Avatar section */}
           <div className="flex-shrink-0">
             <motion.div 
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.2, delay: 0.1 }}
-              className={cn(
-                "w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white font-medium text-sm shadow-md",
-                message.role === 'user' 
-                  ? "bg-gradient-to-br from-blue-500 to-blue-600" 
-                  : "bg-gradient-to-br from-green-500 to-green-600"
-              )}
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-muted/30"
             >
               {message.role === 'user' ? (
-                <User className="w-3 h-3 sm:w-4 sm:h-4" />
+                userImage ? (
+                  <img src={userImage} alt={userName} className="w-5 h-5 rounded-full object-cover" />
+                ) : (
+                  <User className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" />
+                )
               ) : (
-                <Bot className="w-3 h-3 sm:w-4 sm:h-4" />
+                <ProviderIcon provider={provider} />
               )}
             </motion.div>
           </div>
           
-                      <div className="flex-1 min-w-0 space-y-1">
+          {/* Message content section */}
+          <div className="flex-1 min-w-0 space-y-1">
+            {/* Header with role and timestamp */}
             <div className="flex items-center gap-2">
               <span className="font-semibold text-sm">
-                {message.role === 'user' ? 'You' : 'Assistant'}
+                {message.role === 'user' ? userName : modelName}
               </span>
               <span className="text-xs text-muted-foreground hidden sm:inline">
                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
             
-            {/* Thinking toggle button - moved below header */}
-            {message.thinking && (
+            {/* Thinking section */}
+            {thinkingContent && (
               <button
                 onClick={() => setShowThinking(!showThinking)}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted/30 transition-colors mb-2 w-fit"
@@ -112,15 +136,14 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
               </button>
             )}
             
-            {/* Thinking content with blockquote styling */}
-            {message.thinking && showThinking && (
+            {thinkingContent && showThinking && (
               <div className="mb-3 border-l-4 border-muted-foreground/30 pl-4 py-2 bg-muted/10">
                 <div className="flex items-center gap-2 mb-2">
                   <Brain className="w-3 h-3 text-muted-foreground/60" />
                   <span className="text-xs font-medium text-muted-foreground/80">Thinking</span>
                 </div>
                 <div className="text-sm text-muted-foreground/90 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:mb-2 [&>p]:leading-relaxed italic">
-                  {message.thinking.split('\n').map((line, index) => (
+                  {thinkingContent.split('\n').map((line, index) => (
                     <div key={index} className="flex">
                       <span className="flex-1">{line || '\u00A0'}</span>
                     </div>
@@ -129,9 +152,10 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
               </div>
             )}
 
+            {/* Message content section */}
             <div className="relative">
-              {/* Show streaming indicator for empty assistant messages */}
-              {message.role === 'assistant' && !message.content && !message.thinking && (
+              {/* Loading indicators */}
+              {message.role === 'assistant' && !displayContent && !thinkingContent && (
                 <div className="flex items-center gap-1 py-2">
                   <motion.div
                     animate={{ scale: [1, 1.2, 1] }}
@@ -152,8 +176,8 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
                 </div>
               )}
 
-              {/* Show thinking indicator when we have thinking but no content yet */}
-              {message.role === 'assistant' && !message.content && message.thinking && (
+              {/* Deep thinking indicator */}
+              {message.role === 'assistant' && !displayContent && thinkingContent && (
                 <div className="flex items-center gap-1 py-2">
                   <motion.div
                     animate={{ rotate: 360 }}
@@ -163,7 +187,7 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
                     <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
                   </motion.div>
                   <span className="text-xs text-muted-foreground ml-2">deep thinking...</span>
-                  {message.thinking && (
+                  {thinkingContent && (
                     <button
                       onClick={() => setShowThinking(!showThinking)}
                       className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-400 px-2 py-0.5 rounded-md hover:bg-orange-500/10 transition-colors ml-2"
@@ -175,8 +199,8 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
                 </div>
               )}
               
-              {/* Show content if available */}
-              {message.content && (
+              {/* Message content */}
+              {displayContent && (
                 <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:leading-relaxed break-words">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -255,16 +279,16 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
                     ),
                   }}
                   >
-                    {message.content}
+                    {displayContent}
                   </ReactMarkdown>
                 </div>
               )}
               
               {/* Action Buttons - Show only when there's content */}
-              {message.content && (
+              {displayContent && (
                 <div className="flex items-center gap-0.5 mt-1 pt-0.5">
                   <button
-                    onClick={() => copyToClipboard(message.content, 'message')}
+                    onClick={() => copyToClipboard(displayContent, 'message')}
                     className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
                     title="Copy message"
                   >
@@ -276,13 +300,9 @@ export function ChatMessage({ message, isLast, onRetry, availableModels }: ChatM
                     <span className="hidden sm:inline">Copy</span>
                   </button>
                   
-                  {message.role === 'assistant' && availableModels && (
-                    <RetryDropdown 
-                      onRetry={handleRetry}
-                      availableModels={availableModels}
-                    />
+                  {message.role === 'assistant' && (
+                    <RetryDropdown onRetry={handleRetry} />
                   )}
-                  
                   <button
                     className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
                     title="More actions"

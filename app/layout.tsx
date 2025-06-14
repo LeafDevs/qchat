@@ -7,6 +7,7 @@ import { ThemeProvider } from "next-themes";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SettingsButton } from "@/components/Options";
 import { ChatLayout } from "@/components/ChatLayout";
+import { ClientLayout } from "@/components/ClientLayout";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,34 +26,19 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
-          disableTransitionOnChange={false}
+          disableTransitionOnChange
         >
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarInset className="flex flex-col">
-              <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-                <SidebarTrigger className="-ml-1 h-8 w-8" />
-                <div className="ml-auto flex items-center gap-1">
-                  <ThemeToggle />
-                  <SettingsButton />
-                </div>
-              </header>
-              
-              <ChatLayout />
-            </SidebarInset>
-          </SidebarProvider>
+          <ClientLayout>{children}</ClientLayout>
         </ThemeProvider>
       </body>
     </html>
