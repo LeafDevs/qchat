@@ -146,13 +146,12 @@ export function ChatMessages({ messages, isLoading, isStreaming, onRetry, modelN
                 <ChatMessage 
                   key={message.id} 
                   message={message}
-                  isLast={index === messages.length - 1 && !isLoading}
+                  isLast={index === messages.length - 1}
                   onRetry={onRetry}
                   modelName={modelName}
                   provider={provider}
                 />
               ))}
-              {isLoading && !isStreaming && <LoadingMessage key="loading" />}
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>

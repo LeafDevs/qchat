@@ -117,24 +117,34 @@ export const Models: ModelConfig[] = [
     }
 ]
 
-export const openAI = createOpenAI({ compatibility: "strict", apiKey: process.env.OPENAI_API_KEY });
-export const googleAI = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
-export const anthropicAI = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-export const openRouterAI = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: 'https://openrouter.ai/api/v1' });
+// Initialize providers with environment variables
+export function initializeProviders() {
+    const openAI = createOpenAI({ compatibility: "strict", apiKey: process.env.OPENAI_API_KEY });
+    const googleAI = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
+    const anthropicAI = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const openRouterAI = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: 'https://openrouter.ai/api/v1' });
+
+    return {
+        openAI,
+        googleAI,
+        anthropicAI,
+        openRouterAI
+    };
+}
 
 // Utility to get the right model instance for streamText
-export function getProviderModel(model: string) {
+export function getProviderModel(model: string, providers: ReturnType<typeof initializeProviders>) {
     const modelConfig = Models.find(m => m.model === model);
     if (!modelConfig) throw new Error(`Model ${model} not supported`);
     switch (modelConfig.provider) {
         case "OpenAI":
-            return openai(model);
+            return providers.openAI(model);
         case "Google":
-            return googleAI(model);
+            return providers.googleAI(model);
         case "Anthropic":
-            return anthropicAI(model);
+            return providers.anthropicAI(model);
         case "OpenRouter":
-            return openRouterAI(model);
+            return providers.openRouterAI(model);
         default:
             throw new Error(`Provider ${modelConfig.provider} not supported`);
     }

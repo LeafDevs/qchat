@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { streamText } from 'ai';
-import { getProviderModel, openRouterTextStream, Models, initializeProviders } from '@/lib/AI';
+import { getProviderModel, Models, initializeProviders } from '@/lib/AI';
 import { db } from '@/lib/db';
 
 // Initialize providers once when the module loads
@@ -8,11 +8,11 @@ const providers = initializeProviders();
 
 export async function POST(req: Request) {
   try {
-    const { model, prompt, chatId, userId, messageId } = await req.json();
+    const { model, messageId, chatId, userId, prompt } = await req.json();
 
-    if (!model || !prompt || !chatId || !userId) {
+    if (!model || !messageId || !chatId || !userId || !prompt) {
       return NextResponse.json(
-        { error: 'Model, prompt, chatId, and userId are required' },
+        { error: 'Model, messageId, chatId, userId, and prompt are required' },
         { status: 400 }
       );
     }
@@ -30,48 +30,49 @@ export async function POST(req: Request) {
       );
     }
 
-    try {
-      console.log(`[Chat API] Starting chat processing for chatId: ${chatId}, model: ${model}`);
-      
-      // Fetch existing messages for context
-      const previousMessages = await db.all(
-        'SELECT role, content FROM message WHERE chatId = ? ORDER BY createdAt ASC',
-        [chatId]
+    // Get the message to retry
+    const messageToRetry = await db.get(
+      'SELECT * FROM message WHERE id = ? AND chatId = ?',
+      [messageId, chatId]
+    );
+
+    if (!messageToRetry) {
+      return NextResponse.json(
+        { error: 'Message not found' },
+        { status: 404 }
       );
-      console.log(`[Chat API] Retrieved ${previousMessages.length} previous messages for context`);
+    }
+
+    try {
+      console.log(`[Chat API] Starting retry for message: ${messageId}, model: ${model}`);
+      
+      // Fetch messages for context up to the retry point
+      const previousMessages = await db.all(
+        'SELECT role, content FROM message WHERE chatId = ? AND createdAt < ? ORDER BY createdAt ASC',
+        [chatId, messageToRetry.createdAt]
+      );
 
       type ChatRole = 'user' | 'assistant' | 'system';
       const contextMessages = (
         previousMessages as { role: string; content: string }[]
       ).map((m) => ({ role: m.role as ChatRole, content: m.content }));
 
-      // Append the current user prompt as the last message
+      // Add the user prompt that triggered this message
       contextMessages.push({ role: 'user', content: prompt });
-      console.log('[Chat API] Added current prompt to context messages');
 
-      // Save user message to the database
-      const userMessageId = crypto.randomUUID();
+      // Store the current content as previous content
       const now = new Date();
-      await db.run(
-        'INSERT INTO message (id, chatId, content, role, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)',
-        [userMessageId, chatId, prompt, 'user', now, now]
-      );
-      console.log(`[Chat API] Saved user message with ID: ${userMessageId}`);
-
-      // Update chat's updatedAt timestamp
-      await db.run(
-        'UPDATE chat SET updatedAt = ? WHERE id = ?',
-        [now, chatId]
-      );
-      console.log('[Chat API] Updated chat timestamp');
-
-      // Create a temporary message for the assistant's response
-      const assistantMessageId = messageId || crypto.randomUUID();
-      await db.run(
-        'INSERT INTO message (id, chatId, content, role, createdAt, updatedAt, status, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [assistantMessageId, chatId, '', 'assistant', now, now, 'streaming', model]
-      );
-      console.log(`[Chat API] Created temporary assistant message with ID: ${assistantMessageId}`);
+      console.log('[Chat API] Current message content:', messageToRetry.content);
+      try {
+        await db.run(
+          'UPDATE message SET previousContent = content, content = ?, status = ?, updatedAt = ? WHERE id = ?',
+          ['', 'streaming', now, messageId]
+        );
+        console.log('[Chat API] Successfully updated message with previous content');
+      } catch (error) {
+        console.error('[Chat API] Error updating message:', error);
+        throw error;
+      }
 
       const modelProvider = Models.find(m=>m.model===model)?.provider;
       let assistantResponse = '';
@@ -116,12 +117,9 @@ export async function POST(req: Request) {
               const { done, value } = await reader.read();
               if (done) break;
 
-              // Decode the chunk and add to buffer
               buffer += decoder.decode(value, { stream: true });
-
-              // Process complete lines
               const lines = buffer.split('\n');
-              buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+              buffer = lines.pop() || '';
 
               for (const line of lines) {
                 const trimmedLine = line.trim();
@@ -148,16 +146,14 @@ export async function POST(req: Request) {
                       await writer.write(encoder.encode('</think>'));
                       assistantResponse += '</think>';
                     }
-                    // Write immediately to the stream
                     await writer.write(encoder.encode(content));
                     assistantResponse += content;
                     chunkCount++;
 
-                    // Update database periodically
                     if (chunkCount % 10 === 0) {
                       await db.run(
                         'UPDATE message SET content = ?, updatedAt = ? WHERE id = ?',
-                        [assistantResponse, new Date(), assistantMessageId]
+                        [assistantResponse, new Date(), messageId]
                       );
                     }
                   }
@@ -177,13 +173,11 @@ export async function POST(req: Request) {
               assistantResponse += text;
               chunkCount++;
 
-              // Update database every 10 chunks
               if (chunkCount % 10 === 0) {
                 await db.run(
                   'UPDATE message SET content = ?, updatedAt = ? WHERE id = ?',
-                  [assistantResponse, new Date(), assistantMessageId]
+                  [assistantResponse, new Date(), messageId]
                 );
-                console.log(`[Chat API] Processed ${chunkCount} chunks, current response length: ${assistantResponse.length}`);
               }
             }
           }
@@ -191,19 +185,19 @@ export async function POST(req: Request) {
           // Final database updates
           await db.run(
             'UPDATE message SET content = ?, status = ?, updatedAt = ? WHERE id = ?',
-            [assistantResponse, 'complete', new Date(), assistantMessageId]
+            [assistantResponse, 'complete', new Date(), messageId]
           );
           await db.run(
             'UPDATE chat SET updatedAt = ? WHERE id = ?',
             [new Date(), chatId]
           );
-          console.log('[Chat API] Stream processing complete');
+          console.log('[Chat API] Retry stream processing complete');
 
         } catch (error) {
           console.error('Error in stream processing:', error);
           await db.run(
             'UPDATE message SET status = ?, content = ? WHERE id = ?',
-            ['error', 'Failed to generate response', assistantMessageId]
+            ['error', 'Failed to generate response', messageId]
           );
           throw error;
         } finally {
@@ -219,18 +213,24 @@ export async function POST(req: Request) {
         }
       });
 
-    } catch (streamError) {
-      console.error('Error in stream processing:', streamError);
-      throw streamError;
+    } catch (error) {
+      console.error('Error in retry API:', error);
+      return NextResponse.json(
+        {
+          error: 'Failed to process retry request',
+          details: error instanceof Error ? error.message : 'Unknown error',
+        },
+        { status: 500 }
+      );
     }
   } catch (error) {
-    console.error('Error in chat API:', error);
+    console.error('Error in retry API:', error);
     return NextResponse.json(
       {
-        error: 'Failed to process chat request',
+        error: 'Failed to process retry request',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
     );
   }
-}
+} 

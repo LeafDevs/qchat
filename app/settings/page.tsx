@@ -4,8 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { ModelSelectorDropdown } from "@/components/ModelSelectorDropdown"
-import { Models } from "@/lib/AI"
-import { useState } from "react"
+import { Models, ModelProviders } from "@/lib/AI"
+import { useState, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
@@ -13,11 +13,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { Plus, Trash2 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { useSession } from "@/lib/auth-client"
+import { toast } from "sonner"
 
 interface SettingsTab {
-    title: string,
+    title: string;
     description: string;
-    settings: Setting[]
+    settings: Setting[];
 }
 
 interface Setting {
@@ -36,10 +38,11 @@ interface SettingGroup {
 }
 
 interface Settings {
-    [key: string]: SettingsTab
+    [key: string]: SettingsTab;
 }
 
 interface APIKey {
+    id: string;
     provider: string;
     key: string;
     isCustom?: boolean;
@@ -47,126 +50,173 @@ interface APIKey {
     customBaseUrl?: string;
 }
 
+interface CustomModel {
+    id: string;
+    name: string;
+    provider: string;
+    hasFileUpload: boolean;
+    hasVision: boolean;
+    hasThinking: boolean;
+    hasPDFManipulation: boolean;
+    hasSearch: boolean;
+}
+
 export default function SettingsPage() {
+    const { data: session } = useSession()
+    const userId = session?.user?.id
     const [activeTab, setActiveTab] = useState("models")
     const [apiKeys, setApiKeys] = useState<APIKey[]>([])
-    const [newProvider, setNewProvider] = useState({
-        name: "",
-        baseUrl: "",
-        apiKey: ""
-    })
+    const [customModels, setCustomModels] = useState<CustomModel[]>([])
     const [settings, setSettings] = useState<Settings>({
         models: {
             title: "Models",
-            description: "Configure your AI model settings and preferences",
+            description: "Configure your AI model settings",
             settings: [
-                { 
-                    name: "Default Model", 
-                    value: Models[0].model, 
-                    type: "select", 
-                    options: Models.map(model => model.model),
-                    description: "Select the default model to use for new conversations"
-                },
                 {
-                    name: "Enabled Models",
-                    value: true,
-                    type: "boolean_group",
-                    description: "Choose which models are available for use",
-                    group: {
-                        name: "Available Models",
-                        description: "Toggle models on/off to control which ones are available",
-                        settings: Models.map(model => ({
-                            name: model.model,
-                            value: true,
-                            type: "boolean",
-                            description: `Enable or disable the ${model.model} model`
-                        }))
-                    }
+                    name: "Default Model",
+                    value: "gpt-4",
+                    type: "select",
+                    options: Models.map(m => m.model),
+                    description: "Select your default AI model"
                 }
             ]
         },
         general: {
             title: "General",
-            description: "Configure your general application settings",
+            description: "General application settings",
             settings: [
-                { 
-                    name: "Theme", 
-                    value: "system", 
-                    type: "select", 
-                    options: ["light", "dark", "system"],
-                    description: "Choose your preferred theme"
-                },
                 {
-                    name: "Message Settings",
-                    value: true,
-                    type: "boolean_group",
-                    description: "Configure how messages are displayed and handled",
-                    group: {
-                        name: "Message Options",
-                        description: "Customize your message experience",
-                        settings: [
-                            {
-                                name: "Show Timestamps",
-                                value: true,
-                                type: "boolean",
-                                description: "Display timestamps on messages"
-                            },
-                            {
-                                name: "Show Thinking",
-                                value: true,
-                                type: "boolean",
-                                description: "Show model thinking process"
-                            },
-                            {
-                                name: "Auto-scroll",
-                                value: true,
-                                type: "boolean",
-                                description: "Automatically scroll to new messages"
-                            }
-                        ]
-                    }
+                    name: "Dark Mode",
+                    value: false,
+                    type: "boolean",
+                    description: "Enable dark mode"
                 }
             ]
         },
         account: {
             title: "Account",
-            description: "Manage your account settings and preferences",
+            description: "Manage your account settings",
             settings: [
-                { 
-                    name: "Display Name", 
-                    value: "", 
-                    type: "text",
-                    description: "Your display name in the application"
-                },
-                { 
-                    name: "Email", 
-                    value: "", 
-                    type: "text",
-                    description: "Your email address"
-                }
-            ]
-        },
-        billing: {
-            title: "Billing",
-            description: "Manage your billing and subscription settings",
-            settings: [
-                { 
-                    name: "Current Plan", 
-                    value: "free", 
-                    type: "select", 
-                    options: ["free", "pro", "enterprise"],
-                    description: "Your current subscription plan"
+                {
+                    name: "Email Notifications",
+                    value: true,
+                    type: "boolean",
+                    description: "Receive email notifications"
                 }
             ]
         }
     })
+    const [newProvider, setNewProvider] = useState<{
+        name: string;
+        baseUrl: string;
+        apiKey: string;
+        customName?: string;
+    }>({
+        name: "",
+        baseUrl: "",
+        apiKey: "",
+        customName: ""
+    })
+    const [newModel, setNewModel] = useState({
+        name: "",
+        provider: "",
+        hasFileUpload: false,
+        hasVision: false,
+        hasThinking: false,
+        hasPDFManipulation: false,
+        hasSearch: false
+    })
 
-    const addApiKey = (key: APIKey) => {
-        setApiKeys([...apiKeys, key])
+    // Fetch API keys and custom models on mount
+    useEffect(() => {
+        if (userId) {
+            fetchApiKeys()
+            fetchCustomModels()
+        }
+    }, [userId])
+
+    const fetchApiKeys = async () => {
+        try {
+            const response = await fetch(`/api/settings/keys?userId=${userId}`)
+            if (!response.ok) throw new Error('Failed to fetch API keys')
+            const data = await response.json()
+            setApiKeys(data)
+        } catch (error) {
+            console.error('Error fetching API keys:', error)
+            toast.error('Failed to fetch API keys')
+        }
     }
 
-    const removeApiKey = (provider: string) => {
-        setApiKeys(apiKeys.filter(k => k.provider !== provider))
+    const fetchCustomModels = async () => {
+        try {
+            const response = await fetch(`/api/settings/models?userId=${userId}`)
+            if (!response.ok) throw new Error('Failed to fetch custom models')
+            const data = await response.json()
+            setCustomModels(data)
+        } catch (error) {
+            console.error('Error fetching custom models:', error)
+            toast.error('Failed to fetch custom models')
+        }
+    }
+
+    const addApiKey = async (key: Omit<APIKey, 'id'>) => {
+        try {
+            const response = await fetch('/api/settings/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...key, userId })
+            })
+            if (!response.ok) throw new Error('Failed to add API key')
+            await fetchApiKeys()
+            toast.success('API key added successfully')
+        } catch (error) {
+            console.error('Error adding API key:', error)
+            toast.error('Failed to add API key')
+        }
+    }
+
+    const removeApiKey = async (id: string) => {
+        try {
+            const response = await fetch(`/api/settings/keys/${id}`, {
+                method: 'DELETE'
+            })
+            if (!response.ok) throw new Error('Failed to remove API key')
+            await fetchApiKeys()
+            toast.success('API key removed successfully')
+        } catch (error) {
+            console.error('Error removing API key:', error)
+            toast.error('Failed to remove API key')
+        }
+    }
+
+    const addCustomModel = async (model: Omit<CustomModel, 'id'>) => {
+        try {
+            const response = await fetch('/api/settings/models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...model, userId })
+            })
+            if (!response.ok) throw new Error('Failed to add custom model')
+            await fetchCustomModels()
+            toast.success('Custom model added successfully')
+        } catch (error) {
+            console.error('Error adding custom model:', error)
+            toast.error('Failed to add custom model')
+        }
+    }
+
+    const removeCustomModel = async (id: string) => {
+        try {
+            const response = await fetch(`/api/settings/models/${id}`, {
+                method: 'DELETE'
+            })
+            if (!response.ok) throw new Error('Failed to remove custom model')
+            await fetchCustomModels()
+            toast.success('Custom model removed successfully')
+        } catch (error) {
+            console.error('Error removing custom model:', error)
+            toast.error('Failed to remove custom model')
+        }
     }
 
     const addCustomProvider = () => {
@@ -178,7 +228,7 @@ export default function SettingsPage() {
                 customName: newProvider.name,
                 customBaseUrl: newProvider.baseUrl
             })
-            setNewProvider({ name: "", baseUrl: "", apiKey: "" })
+            setNewProvider({ name: "", baseUrl: "", apiKey: "", customName: "" })
         }
     }
 
@@ -193,7 +243,7 @@ export default function SettingsPage() {
                                 ...settings,
                                 [activeTab]: {
                                     ...settings[activeTab],
-                                    settings: settings[activeTab].settings.map(s => 
+                                    settings: settings[activeTab].settings.map((s: Setting) => 
                                         s.name === setting.name 
                                             ? { ...s, value }
                                             : s
@@ -225,7 +275,7 @@ export default function SettingsPage() {
                                 ...settings,
                                 [activeTab]: {
                                     ...settings[activeTab],
-                                    settings: settings[activeTab].settings.map(s => 
+                                    settings: settings[activeTab].settings.map((s: Setting) => 
                                         s.name === setting.name 
                                             ? { ...s, value: e.target.value }
                                             : s
@@ -245,7 +295,7 @@ export default function SettingsPage() {
                                 ...settings,
                                 [activeTab]: {
                                     ...settings[activeTab],
-                                    settings: settings[activeTab].settings.map(s => 
+                                    settings: settings[activeTab].settings.map((s: Setting) => 
                                         s.name === setting.name 
                                             ? { ...s, value: checked }
                                             : s
@@ -269,7 +319,7 @@ export default function SettingsPage() {
                             )}
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {setting.group?.settings.map((groupSetting) => (
+                            {setting.group?.settings.map((groupSetting: Setting) => (
                                 <div key={groupSetting.name} className="flex items-center justify-between space-x-2">
                                     <div className="space-y-0.5">
                                         <Label>{groupSetting.name}</Label>
@@ -285,13 +335,13 @@ export default function SettingsPage() {
                                                     ...settings,
                                                     [activeTab]: {
                                                         ...settings[activeTab],
-                                                        settings: settings[activeTab].settings.map(s => 
+                                                        settings: settings[activeTab].settings.map((s: Setting) => 
                                                             s.name === setting.name 
                                                                 ? {
                                                                     ...s,
                                                                     group: {
                                                                         ...s.group!,
-                                                                        settings: s.group!.settings.map(gs =>
+                                                                        settings: s.group!.settings.map((gs: Setting) =>
                                                                             gs.name === groupSetting.name
                                                                                 ? { ...gs, value: checked }
                                                                                 : gs
@@ -328,7 +378,7 @@ export default function SettingsPage() {
                 {/* Existing API Keys */}
                 <div className="space-y-4">
                     {apiKeys.map((key) => (
-                        <div key={key.provider} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div key={key.id} className="flex items-center justify-between p-4 border rounded-lg">
                             <div className="space-y-1">
                                 <div className="font-medium">
                                     {key.isCustom ? key.customName : key.provider}
@@ -349,7 +399,7 @@ export default function SettingsPage() {
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => removeApiKey(key.provider)}
+                                    onClick={() => removeApiKey(key.id)}
                                 >
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -378,47 +428,42 @@ export default function SettingsPage() {
                                 <Label>Provider</Label>
                                 <Select
                                     onValueChange={(value) => {
-                                        if (value === "custom") {
-                                            setNewProvider(prev => ({ ...prev, name: "" }))
-                                        } else {
-                                            setNewProvider(prev => ({ ...prev, name: value }))
-                                        }
+                                        setNewProvider(prev => ({ ...prev, name: value }))
                                     }}
                                 >
                                     <SelectTrigger>
                                         <SelectValue placeholder="Select a provider" />
                                     </SelectTrigger>
                                     <SelectContent>
+                                        <SelectItem value="OpenAI">OpenAI</SelectItem>
+                                        <SelectItem value="Anthropic">Anthropic</SelectItem>
+                                        <SelectItem value="OpenRouter">OpenRouter</SelectItem>
+                                        <SelectItem value="Google">Google (Gemini)</SelectItem>
                                         <SelectItem value="custom">Custom Provider</SelectItem>
-                                        {Models.map(model => (
-                                            <SelectItem key={model.provider} value={model.provider}>
-                                                {model.provider}
-                                            </SelectItem>
-                                        ))}
                                     </SelectContent>
                                 </Select>
                             </div>
 
-                            {newProvider.name === "" && (
-                                <div className="space-y-2">
-                                    <Label>Custom Provider Name</Label>
-                                    <Input
-                                        placeholder="Enter provider name"
-                                        value={newProvider.name}
-                                        onChange={(e) => setNewProvider(prev => ({ ...prev, name: e.target.value }))}
-                                    />
-                                </div>
-                            )}
+                            {newProvider.name === "custom" && (
+                                <>
+                                    <div className="space-y-2">
+                                        <Label>Custom Provider Name</Label>
+                                        <Input
+                                            placeholder="Enter provider name"
+                                            value={newProvider.customName || ""}
+                                            onChange={(e) => setNewProvider(prev => ({ ...prev, customName: e.target.value }))}
+                                        />
+                                    </div>
 
-                            {newProvider.name === "" && (
-                                <div className="space-y-2">
-                                    <Label>Base URL</Label>
-                                    <Input
-                                        placeholder="Enter base URL"
-                                        value={newProvider.baseUrl}
-                                        onChange={(e) => setNewProvider(prev => ({ ...prev, baseUrl: e.target.value }))}
-                                    />
-                                </div>
+                                    <div className="space-y-2">
+                                        <Label>Base URL</Label>
+                                        <Input
+                                            placeholder="Enter base URL"
+                                            value={newProvider.baseUrl}
+                                            onChange={(e) => setNewProvider(prev => ({ ...prev, baseUrl: e.target.value }))}
+                                        />
+                                    </div>
+                                </>
                             )}
 
                             <div className="space-y-2">
@@ -432,7 +477,166 @@ export default function SettingsPage() {
                             </div>
                         </div>
                         <DialogFooter>
-                            <Button onClick={addCustomProvider}>Add API Key</Button>
+                            <Button onClick={() => {
+                                if (newProvider.name === "custom") {
+                                    if (!newProvider.customName || !newProvider.baseUrl || !newProvider.apiKey) {
+                                        toast.error("Please fill in all fields for custom provider")
+                                        return
+                                    }
+                                    addApiKey({
+                                        provider: newProvider.customName,
+                                        key: newProvider.apiKey,
+                                        isCustom: true,
+                                        customName: newProvider.customName,
+                                        customBaseUrl: newProvider.baseUrl
+                                    })
+                                } else {
+                                    if (!newProvider.name || !newProvider.apiKey) {
+                                        toast.error("Please fill in all required fields")
+                                        return
+                                    }
+                                    addApiKey({
+                                        provider: newProvider.name,
+                                        key: newProvider.apiKey
+                                    })
+                                }
+                                setNewProvider({ name: "", baseUrl: "", apiKey: "", customName: "" })
+                            }}>Add API Key</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </CardContent>
+        </Card>
+    )
+
+    const renderCustomModelsSection = () => (
+        <Card>
+            <CardHeader>
+                <CardTitle>Custom Models</CardTitle>
+                <CardDescription>
+                    Add and manage your custom models
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                {/* Existing Custom Models */}
+                <div className="space-y-4">
+                    {customModels.map((model) => (
+                        <div key={model.id} className="flex items-center justify-between p-4 border rounded-lg">
+                            <div className="space-y-1">
+                                <div className="font-medium">{model.name}</div>
+                                <div className="text-sm text-muted-foreground">
+                                    Provider: {model.provider}
+                                </div>
+                                <div className="flex gap-2 mt-2">
+                                    {model.hasFileUpload && <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">File Upload</span>}
+                                    {model.hasVision && <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Vision</span>}
+                                    {model.hasThinking && <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Thinking</span>}
+                                    {model.hasPDFManipulation && <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">PDF</span>}
+                                    {model.hasSearch && <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Search</span>}
+                                </div>
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeCustomModel(model.id)}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Add Custom Model Dialog */}
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" className="w-full">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Custom Model
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Add Custom Model</DialogTitle>
+                            <DialogDescription>
+                                Add a custom model with its capabilities
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                                <Label>Model Name</Label>
+                                <Input
+                                    placeholder="Enter model name"
+                                    value={newModel.name}
+                                    onChange={(e) => setNewModel(prev => ({ ...prev, name: e.target.value }))}
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Provider</Label>
+                                <Select
+                                    onValueChange={(value) => setNewModel(prev => ({ ...prev, provider: value }))}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select a provider" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {apiKeys.map(key => (
+                                            <SelectItem key={key.id} value={key.isCustom ? key.customName! : key.provider}>
+                                                {key.isCustom ? key.customName : key.provider}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-4">
+                                <Label>Capabilities</Label>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="flex items-center space-x-2">
+                                        <Switch
+                                            id="fileUpload"
+                                            checked={newModel.hasFileUpload}
+                                            onCheckedChange={(checked) => setNewModel(prev => ({ ...prev, hasFileUpload: checked }))}
+                                        />
+                                        <Label htmlFor="fileUpload">File Upload</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <Switch
+                                            id="vision"
+                                            checked={newModel.hasVision}
+                                            onCheckedChange={(checked) => setNewModel(prev => ({ ...prev, hasVision: checked }))}
+                                        />
+                                        <Label htmlFor="vision">Vision</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <Switch
+                                            id="thinking"
+                                            checked={newModel.hasThinking}
+                                            onCheckedChange={(checked) => setNewModel(prev => ({ ...prev, hasThinking: checked }))}
+                                        />
+                                        <Label htmlFor="thinking">Thinking</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <Switch
+                                            id="pdfManipulation"
+                                            checked={newModel.hasPDFManipulation}
+                                            onCheckedChange={(checked) => setNewModel(prev => ({ ...prev, hasPDFManipulation: checked }))}
+                                        />
+                                        <Label htmlFor="pdfManipulation">PDF Manipulation</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <Switch
+                                            id="search"
+                                            checked={newModel.hasSearch}
+                                            onCheckedChange={(checked) => setNewModel(prev => ({ ...prev, hasSearch: checked }))}
+                                        />
+                                        <Label htmlFor="search">Search</Label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button onClick={() => addCustomModel(newModel)}>Add Model</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -454,7 +658,7 @@ export default function SettingsPage() {
                 {/* Left Navigation - Fixed */}
                 <nav className="w-[200px] shrink-0 sticky top-6 h-[calc(100vh-8rem)]">
                     <div className="space-y-1">
-                        {Object.entries(settings).map(([key, tab]) => (
+                        {Object.entries(settings).map(([key, tab]: [string, SettingsTab]) => (
                             <button 
                                 key={key}
                                 onClick={() => setActiveTab(key)}
@@ -480,7 +684,7 @@ export default function SettingsPage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            {settings[activeTab].settings.map((setting) => (
+                            {settings[activeTab].settings.map((setting: Setting) => (
                                 <div key={setting.name} className="space-y-2">
                                     <div className="space-y-0.5">
                                         <Label>{setting.name}</Label>
@@ -494,8 +698,13 @@ export default function SettingsPage() {
                         </CardContent>
                     </Card>
 
-                    {/* API Keys Section - Only show in Models tab */}
-                    {activeTab === "models" && renderApiKeySection()}
+                    {/* API Keys and Custom Models Sections - Only show in Models tab */}
+                    {activeTab === "models" && (
+                        <>
+                            {renderApiKeySection()}
+                            {renderCustomModelsSection()}
+                        </>
+                    )}
                 </div>
             </div>
         </div>

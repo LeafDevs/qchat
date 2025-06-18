@@ -47,23 +47,22 @@ export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange, av
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.3 }}
-      className="border-t bg-background/80 backdrop-blur-sm sticky bottom-0"
+      className="bg-gradient-to-t from-background via-background/95 to-background/80 backdrop-blur-md border-t border-border/50 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.3)]"
     >
-      <div className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 py-3">
+      <div className="max-w-[40%] mx-auto px-3 sm:px-6 py-4">
         <form onSubmit={handleSubmit} className="relative">
           <motion.div
             animate={{
               borderColor: isFocused ? 'var(--primary)' : 'var(--border)',
-              boxShadow: isFocused ? '0 0 0 1px var(--ring)' : 'none'
+              boxShadow: isFocused ? '0 0 0 1px var(--ring), 0 4px 12px -2px rgba(0,0,0,0.1)' : '0 2px 8px -2px rgba(0,0,0,0.05)'
             }}
             transition={{ duration: 0.2 }}
             className={cn(
-              "flex flex-col w-full bg-background/70 border border-border  rounded-3xl p-3 shadow-sm backdrop-blur-md transition-all duration-200",
+              "flex flex-col w-full bg-background/80 border border-border rounded-2xl p-3 shadow-sm backdrop-blur-md transition-all duration-200",
               isFocused && "ring-2 ring-primary/50"
             )}
           >
-            <div className="flex w-full items-end gap-2">
-
+            <div className="flex w-full items-end gap-3">
               {/* Input */}
               <textarea
                 ref={inputRef}
@@ -73,7 +72,7 @@ export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange, av
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 placeholder="Type your message..."
-                className="flex-1 bg-transparent text-sm resize-none focus:outline-none min-h-[32px] max-h-[120px] py-1 placeholder:text-muted-foreground/50"
+                className="flex-1 bg-transparent text-sm resize-none focus:outline-none min-h-[40px] max-h-[120px] py-2 px-1 placeholder:text-muted-foreground/50"
                 disabled={isLoading}
                 rows={1}
               />
@@ -85,9 +84,9 @@ export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange, av
                 type="submit"
                 disabled={isLoading || !input.trim()}
                 className={cn(
-                  "flex items-center justify-center w-10 h-10 rounded-full transition-colors duration-200",
+                  "flex items-center justify-center w-10 h-10 rounded-full transition-all duration-200",
                   input.trim() && !isLoading
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md hover:shadow-lg"
                     : "bg-muted text-muted-foreground cursor-not-allowed"
                 )}
               >

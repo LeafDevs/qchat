@@ -3,6 +3,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Add smooth transitions for theme changes */
+* {
+  transition: background-color 0.3s ease-in-out, border-color 0.3s ease-in-out, color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+}
+
+/* Theme switch overlay */
+.theme-switch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+  background: var(--background);
+}
+
+.theme-switch-overlay.active {
+  opacity: 0.1;
+}
+
 :root {
   --background: oklch(0.9551 0 0);
   --foreground: oklch(0.3211 0 0);

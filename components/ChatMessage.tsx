@@ -19,8 +19,9 @@ export interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: Date
-  thinking?: string // For thinking models like o1
+  thinking?: string
   model?: string
+  previousContent?: string
 }
 
 interface ChatMessageProps {
@@ -38,8 +39,9 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
   const userImage = session?.user?.image
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [copiedMessage, setCopiedMessage] = useState(false)
-  const [showThinking, setShowThinking] = useState(true) // Default to true to show thinking initially
+  const [showThinking, setShowThinking] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const [showPreviousResponse, setShowPreviousResponse] = useState(false)
 
   useEffect(() => {
     setIsVisible(true)
@@ -49,6 +51,7 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
   const thinkingMatch = message.content.match(/<think>([\s\S]*?)<\/think>/);
   const thinkingContent = thinkingMatch ? thinkingMatch[1].trim() : '';
   const displayContent = message.content.replace(/<think>[\s\S]*?<\/think>/, '');
+  const previousContent = message.previousContent?.replace(/<think>[\s\S]*?<\/think>/, '');
 
   const copyToClipboard = async (text: string, type: 'code' | 'message' = 'code') => {
     try {
@@ -85,7 +88,6 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
         isLast && "mb-2"
       )}
     >
-      {/* Rest of the component remains unchanged */}
       <div className="max-w-full sm:max-w-6xl mx-auto">
         <div className={cn(
           "flex gap-3 sm:gap-4 rounded-lg p-2 sm:p-3 transition-colors duration-200",
@@ -118,7 +120,7 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
             {/* Header with role and timestamp */}
             <div className="flex items-center gap-2">
               <span className="font-semibold text-sm">
-                {message.role === 'user' ? userName : modelName}
+                {message.role === 'user' ? userName : "Assistant"}
               </span>
               <span className="text-xs text-muted-foreground hidden sm:inline">
                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -155,7 +157,7 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
             {/* Message content section */}
             <div className="relative">
               {/* Loading indicators */}
-              {message.role === 'assistant' && !displayContent && !thinkingContent && (
+              {message.role === 'assistant' && !displayContent && (
                 <div className="flex items-center gap-1 py-2">
                   <motion.div
                     animate={{ scale: [1, 1.2, 1] }}
@@ -176,31 +178,20 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
                 </div>
               )}
 
-              {/* Deep thinking indicator */}
-              {message.role === 'assistant' && !displayContent && thinkingContent && (
-                <div className="flex items-center gap-1 py-2">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                    className="w-3 h-3 rounded-full bg-orange-500/20 flex items-center justify-center"
+              {/* Previous response toggle */}
+              {message.role === 'assistant' && previousContent && (
+                <div className="flex items-center gap-2 mb-2">
+                  <button
+                    onClick={() => setShowPreviousResponse(!showPreviousResponse)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted/30 transition-colors"
                   >
-                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                  </motion.div>
-                  <span className="text-xs text-muted-foreground ml-2">deep thinking...</span>
-                  {thinkingContent && (
-                    <button
-                      onClick={() => setShowThinking(!showThinking)}
-                      className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-400 px-2 py-0.5 rounded-md hover:bg-orange-500/10 transition-colors ml-2"
-                    >
-                      <Brain className="w-2.5 h-2.5" />
-                      <span>{showThinking ? 'Hide thinking' : 'Show Thinking...'}</span>
-                    </button>
-                  )}
+                    <span>{showPreviousResponse ? 'Show new response' : 'Show previous response'}</span>
+                  </button>
                 </div>
               )}
-              
+
               {/* Message content */}
-              {displayContent && (
+              {(displayContent || previousContent) && (
                 <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:leading-relaxed break-words">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -279,16 +270,16 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
                     ),
                   }}
                   >
-                    {displayContent}
+                    {showPreviousResponse && previousContent ? previousContent : displayContent}
                   </ReactMarkdown>
                 </div>
               )}
               
               {/* Action Buttons - Show only when there's content */}
-              {displayContent && (
+              {(displayContent || previousContent) && (
                 <div className="flex items-center gap-0.5 mt-1 pt-0.5">
                   <button
-                    onClick={() => copyToClipboard(displayContent, 'message')}
+                    onClick={() => copyToClipboard(showPreviousResponse && previousContent ? previousContent : displayContent, 'message')}
                     className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
                     title="Copy message"
                   >
@@ -303,12 +294,6 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
                   {message.role === 'assistant' && (
                     <RetryDropdown onRetry={handleRetry} />
                   )}
-                  <button
-                    className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
-                    title="More actions"
-                  >
-                    <span className="hidden sm:inline">More</span>
-                  </button>
                 </div>
               )}
             </div>

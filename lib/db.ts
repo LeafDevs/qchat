@@ -72,6 +72,32 @@ async function ensureTables() {
       expiresAt DATETIME,
       FOREIGN KEY (userId) REFERENCES user(id)
     );
+    CREATE TABLE IF NOT EXISTS apiKey (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      provider TEXT,
+      key TEXT,
+      isCustom BOOLEAN DEFAULT false,
+      customName TEXT,
+      customBaseUrl TEXT,
+      createdAt DATETIME,
+      updatedAt DATETIME,
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
+    CREATE TABLE IF NOT EXISTS customModel (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      name TEXT,
+      provider TEXT,
+      hasFileUpload BOOLEAN DEFAULT false,
+      hasVision BOOLEAN DEFAULT false,
+      hasThinking BOOLEAN DEFAULT false,
+      hasPDFManipulation BOOLEAN DEFAULT false,
+      hasSearch BOOLEAN DEFAULT false,
+      createdAt DATETIME,
+      updatedAt DATETIME,
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
   `);
 
   // If the status column doesn't exist, add it
