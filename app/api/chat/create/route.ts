@@ -3,11 +3,11 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { userId, model } = await req.json();
+    const { userId, model = 'gpt-4' } = await req.json();
     
-    if (!userId || !model) {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'userId and model are required' },
+        { error: 'userId is required' },
         { status: 400 }
       );
     }

@@ -81,6 +81,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         const errorData = await response.json();
+        const errorMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'error',
+          content: errorData.error || 'Failed to get response',
+          timestamp: new Date(),
+          model: currentModel
+        };
+        setMessages(prev => [...prev, errorMessage]);
         throw new Error(errorData.error || 'Failed to get response');
       }
 

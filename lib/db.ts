@@ -18,6 +18,13 @@ async function ensureTables() {
   // Check for model column
   const hasModelColumn = messageTableInfo.some((col: any) => col.name === 'model');
 
+  // Check for previousContent column
+  const hasPreviousContentColumn = messageTableInfo.some((col: any) => col.name === 'previousContent');
+
+  // Check for enabled column in apiKey table
+  const apiKeyTableInfo = await db.all("PRAGMA table_info(apiKey)");
+  const hasEnabledColumn = apiKeyTableInfo.some((col: any) => col.name === 'enabled');
+
   // Add CREATE TABLE IF NOT EXISTS statements for all required tables
   await db.exec(`
     CREATE TABLE IF NOT EXISTS user (
@@ -40,6 +47,7 @@ async function ensureTables() {
       content TEXT,
       role TEXT,
       status TEXT DEFAULT 'complete',
+      previousContent TEXT,
       createdAt DATETIME,
       updatedAt DATETIME,
       FOREIGN KEY (chatId) REFERENCES chat(id)
@@ -77,6 +85,7 @@ async function ensureTables() {
       userId TEXT,
       provider TEXT,
       key TEXT,
+      enabled BOOLEAN DEFAULT true,
       isCustom BOOLEAN DEFAULT false,
       customName TEXT,
       customBaseUrl TEXT,
@@ -94,6 +103,16 @@ async function ensureTables() {
       hasThinking BOOLEAN DEFAULT false,
       hasPDFManipulation BOOLEAN DEFAULT false,
       hasSearch BOOLEAN DEFAULT false,
+      createdAt DATETIME,
+      updatedAt DATETIME,
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
+    CREATE TABLE IF NOT EXISTS requestLimit (
+      id TEXT PRIMARY KEY,
+      userId TEXT UNIQUE,
+      requestCount INTEGER DEFAULT 0,
+      maxRequests INTEGER DEFAULT 250,
+      resetAt DATETIME,
       createdAt DATETIME,
       updatedAt DATETIME,
       FOREIGN KEY (userId) REFERENCES user(id)
@@ -122,6 +141,31 @@ async function ensureTables() {
       console.log('Added model column to message table');
     } catch (error) {
       console.error('Error adding model column:', error);
+    }
+  }
+
+  // If the previousContent column doesn't exist, add it
+  if (!hasPreviousContentColumn) {
+    try {
+      await db.exec(`
+        ALTER TABLE message ADD COLUMN previousContent TEXT;
+      `);
+      console.log('Added previousContent column to message table');
+    } catch (error) {
+      console.error('Error adding previousContent column:', error);
+    }
+  }
+
+  // If the enabled column doesn't exist in apiKey table, add it
+  if (!hasEnabledColumn) {
+    try {
+      await db.exec(`
+        ALTER TABLE apiKey ADD COLUMN enabled BOOLEAN DEFAULT true;
+        UPDATE apiKey SET enabled = true WHERE enabled IS NULL;
+      `);
+      console.log('Added enabled column to apiKey table');
+    } catch (error) {
+      console.error('Error adding enabled column:', error);
     }
   }
 }

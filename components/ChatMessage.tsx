@@ -127,8 +127,8 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
               </span>
             </div>
             
-            {/* Thinking section */}
-            {thinkingContent && (
+            {/* Thinking section - Show if message starts with <think> or < */}
+            {(thinkingContent || message.content.startsWith('<think>') || message.content.startsWith('<')) && (
               <button
                 onClick={() => setShowThinking(!showThinking)}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted/30 transition-colors mb-2 w-fit"
@@ -138,14 +138,14 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
               </button>
             )}
             
-            {thinkingContent && showThinking && (
+            {(thinkingContent || message.content.startsWith('<think>') || message.content.startsWith('<')) && showThinking && (
               <div className="mb-3 border-l-4 border-muted-foreground/30 pl-4 py-2 bg-muted/10">
                 <div className="flex items-center gap-2 mb-2">
                   <Brain className="w-3 h-3 text-muted-foreground/60" />
                   <span className="text-xs font-medium text-muted-foreground/80">Thinking</span>
                 </div>
                 <div className="text-sm text-muted-foreground/90 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p]:mb-2 [&>p]:leading-relaxed italic">
-                  {thinkingContent.split('\n').map((line, index) => (
+                  {(thinkingContent || message.content).split('\n').map((line, index) => (
                     <div key={index} className="flex">
                       <span className="flex-1">{line || '\u00A0'}</span>
                     </div>

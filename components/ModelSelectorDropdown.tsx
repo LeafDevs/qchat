@@ -48,7 +48,7 @@ export function ModelSelectorDropdown({ currentModel, onModelChange, providers }
           <span className="truncate max-w-16 sm:max-w-20">{getCurrentModelName()}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-56">
+      <DropdownMenuContent align="start" className="w-56">
         {Object.entries(groupedModels).map(([provider, models]) => (
           <DropdownMenuSub key={provider}>
             <DropdownMenuSubTrigger className="flex items-center gap-2">
@@ -65,7 +65,7 @@ export function ModelSelectorDropdown({ currentModel, onModelChange, providers }
                     "flex items-center gap-2"
                   )}
                 >
-                  <span>{model.model}</span>
+                  <span>{model.display_name}</span>
                   {model.hasThinking && (
                     <span className="ml-auto text-xs text-muted-foreground">Thinking</span>
                   )}

@@ -1,7 +1,7 @@
 'use client'
 
-import { Calendar, CreditCard, Home, Inbox, LogOut, MessageSquare, Plus, Search, Settings, User } from "lucide-react"
-import { useRouter, usePathname } from "next/navigation"
+import { Calendar, CreditCard, Home, Inbox, LogOut, MessageSquare, Plus, Search, Settings, User, Trash2, MoreVertical } from "lucide-react"
+import { useRouter, usePathname, useParams } from "next/navigation"
 import Link from "next/link"
 import { useSession, signOut } from "@/lib/auth-client"
 import { useState, useEffect, useRef } from "react"
@@ -21,45 +21,52 @@ import {
 } from "@/components/ui/sidebar"
 import { ProviderIcon } from "./ProviderIcons"
 import { cn } from "@/lib/utils"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 
 interface Chat {
   id: string;
   model: string;
-  lastMessage: string;
-  lastMessageTime: string;
-  createdAt: string;
+  lastMessage?: string;
+  lastMessageTime?: string;
   updatedAt: string;
 }
 
 export function AppSidebar() {
-  const [isOpen, setIsOpen] = useState(false)
-  const [chats, setChats] = useState<Chat[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const user = useSession().data?.user;
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const router = useRouter()
-  const pathname = usePathname();
-  const activeChatId = pathname?.startsWith('/chat/') ? pathname.split('/chat/')[1] : null;
+  const router = useRouter();
+  const params = useParams();
+  const { data: session } = useSession();
+  const user = session?.user;
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const activeChatId = params?.id as string;
 
   useEffect(() => {
-    if (user?.id) {
-      fetchChats();
-    }
-  }, [user?.id]);
+    if (!user?.id) return;
+    
+    const fetchChats = async () => {
+      try {
+        const response = await fetch(`/api/chat/list?userId=${user.id}`);
+        if (!response.ok) throw new Error('Failed to fetch chats');
+        const data = await response.json();
+        setChats(data);
+      } catch (error) {
+        console.error('Error fetching chats:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const fetchChats = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(`/api/chat/list?userId=${user?.id}`);
-      if (!response.ok) throw new Error('Failed to fetch chats');
-      const data = await response.json();
-      setChats(data);
-    } catch (error) {
-      console.error('Error fetching chats:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    fetchChats();
+  }, [user?.id]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -81,8 +88,54 @@ export function AppSidebar() {
     }
   }
 
-  const handleNewChat = () => {
-    router.push('/');
+  const handleNewChat = async () => {
+    try {
+      if (!user?.id) return;
+      
+      const response = await fetch('/api/chat/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id,
+          model: 'gpt-4' // Default model, can be changed later
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to create chat');
+      
+      const { chatId } = await response.json();
+      router.push(`/chat/${chatId}`);
+    } catch (error) {
+      console.error('Error creating new chat:', error);
+    }
+  };
+
+  const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!user?.id) return;
+    
+    try {
+      const response = await fetch(`/api/chat/delete?chatId=${chatId}&userId=${user.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete chat');
+      
+      // Remove the chat from the local state
+      setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
+      
+      // If we're currently on the deleted chat, redirect to home
+      if (chatId === activeChatId) {
+        router.push('/');
+      }
+      
+      toast.success('Chat deleted successfully');
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+      toast.error('Failed to delete chat');
+    }
   };
 
   // Group chats by last used time
@@ -106,6 +159,50 @@ export function AppSidebar() {
     const chatDate = new Date(chat.lastMessageTime || chat.updatedAt).toISOString().split('T')[0];
     return chatDate < thirtyDaysAgo;
   });
+
+  const renderChatItem = (chat: Chat) => (
+    <Link
+      key={chat.id}
+      href={`/chat/${chat.id}`}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors group",
+        activeChatId === chat.id
+          ? "bg-muted text-foreground"
+          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+      )}
+    >
+      <div className="flex-1 min-w-0">
+        <p className="truncate">{chat.lastMessage || 'New Chat'}</p>
+        <p className="text-xs text-muted-foreground">
+          {new Date(chat.lastMessageTime || chat.updatedAt).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })}
+        </p>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 opacity-0 group-hover:opacity-100"
+            onClick={(e) => e.preventDefault()}
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={(e) => handleDeleteChat(chat.id, e)}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </Link>
+  );
 
   return (
     <Sidebar>
@@ -149,27 +246,7 @@ export function AppSidebar() {
                 <SidebarGroupLabel className="uppercase text-[11px] tracking-wider text-muted-foreground/70 px-3 py-1">Today</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {todayChats.map((chat) => (
-                      <SidebarMenuItem key={chat.id}>
-                        <Link
-                          href={`/chat/${chat.id}`}
-                          className={
-                            cn(
-                              "block w-full px-2 py-1 rounded-md transition-colors",
-                              activeChatId === chat.id
-                                ? "bg-sidebar-accent/20 text-foreground"
-                                : "hover:bg-sidebar-accent/10 text-sidebar-foreground"
-                            )
-                          }
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <ProviderIcon provider={chat.model.split('/')[0].toLowerCase()} />
-                            <span className="truncate flex-1">{chat.lastMessage || 'New Chat'}</span>
-                            <span className="text-xs text-muted-foreground">{chat.model}</span>
-                          </div>
-                        </Link>
-                      </SidebarMenuItem>
-                    ))}
+                    {todayChats.map(renderChatItem)}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
@@ -180,27 +257,7 @@ export function AppSidebar() {
                 <SidebarGroupLabel className="uppercase text-[11px] tracking-wider text-muted-foreground/70 px-3 py-1">Last 7 Days</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {last7DaysChats.map((chat) => (
-                      <SidebarMenuItem key={chat.id}>
-                        <Link
-                          href={`/chat/${chat.id}`}
-                          className={
-                            cn(
-                              "block w-full px-2 py-1 rounded-md transition-colors",
-                              activeChatId === chat.id
-                                ? "bg-sidebar-accent/20 text-foreground"
-                                : "hover:bg-sidebar-accent/10 text-sidebar-foreground"
-                            )
-                          }
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <ProviderIcon provider={chat.model.split('/')[0].toLowerCase()} />
-                            <span className="truncate flex-1">{chat.lastMessage || 'New Chat'}</span>
-                            <span className="text-xs text-muted-foreground">{chat.model}</span>
-                          </div>
-                        </Link>
-                      </SidebarMenuItem>
-                    ))}
+                    {last7DaysChats.map(renderChatItem)}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
@@ -211,27 +268,7 @@ export function AppSidebar() {
                 <SidebarGroupLabel className="uppercase text-[11px] tracking-wider text-muted-foreground/70 px-3 py-1">Last 30 Days</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {last30DaysChats.map((chat) => (
-                      <SidebarMenuItem key={chat.id}>
-                        <Link
-                          href={`/chat/${chat.id}`}
-                          className={
-                            cn(
-                              "block w-full px-2 py-1 rounded-md transition-colors",
-                              activeChatId === chat.id
-                                ? "bg-sidebar-accent/20 text-foreground"
-                                : "hover:bg-sidebar-accent/10 text-sidebar-foreground"
-                            )
-                          }
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <ProviderIcon provider={chat.model.split('/')[0].toLowerCase()} />
-                            <span className="truncate flex-1">{chat.lastMessage || 'New Chat'}</span>
-                            <span className="text-xs text-muted-foreground">{chat.model}</span>
-                          </div>
-                        </Link>
-                      </SidebarMenuItem>
-                    ))}
+                    {last30DaysChats.map(renderChatItem)}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
@@ -242,27 +279,7 @@ export function AppSidebar() {
                 <SidebarGroupLabel className="uppercase text-[11px] tracking-wider text-muted-foreground/70 px-3 py-1">Older</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {olderChats.map((chat) => (
-                      <SidebarMenuItem key={chat.id}>
-                        <Link
-                          href={`/chat/${chat.id}`}
-                          className={
-                            cn(
-                              "block w-full px-2 py-1 rounded-md transition-colors",
-                              activeChatId === chat.id
-                                ? "bg-sidebar-accent/20 text-foreground"
-                                : "hover:bg-sidebar-accent/10 text-sidebar-foreground"
-                            )
-                          }
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <ProviderIcon provider={chat.model.split('/')[0].toLowerCase()} />
-                            <span className="truncate flex-1">{chat.lastMessage || 'New Chat'}</span>
-                            <span className="text-xs text-muted-foreground">{chat.model}</span>
-                          </div>
-                        </Link>
-                      </SidebarMenuItem>
-                    ))}
+                    {olderChats.map(renderChatItem)}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>

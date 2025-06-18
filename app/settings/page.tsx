@@ -15,6 +15,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSession } from "@/lib/auth-client"
 import { toast } from "sonner"
+import { Textarea } from "@/components/ui/textarea"
 
 interface SettingsTab {
     title: string;
@@ -25,7 +26,7 @@ interface SettingsTab {
 interface Setting {
     name: string;
     value: string | boolean | number;
-    type: "text" | "number" | "boolean" | "select" | "boolean_group" | "text_group" | "number_group" | "select_group";
+    type: "text" | "number" | "boolean" | "select" | "boolean_group" | "text_group" | "number_group" | "select_group" | "textarea";
     options?: string[];
     group?: SettingGroup;
     description?: string;
@@ -45,6 +46,7 @@ interface APIKey {
     id: string;
     provider: string;
     key: string;
+    enabled?: boolean;
     isCustom?: boolean;
     customName?: string;
     customBaseUrl?: string;
@@ -66,7 +68,14 @@ export default function SettingsPage() {
     const userId = session?.user?.id
     const [activeTab, setActiveTab] = useState("models")
     const [apiKeys, setApiKeys] = useState<APIKey[]>([])
+    const [tempKeyValues, setTempKeyValues] = useState<Record<string, string>>({})
     const [customModels, setCustomModels] = useState<CustomModel[]>([])
+    const [requestLimit, setRequestLimit] = useState<{
+        id: string;
+        requestCount: number;
+        maxRequests: number;
+        resetAt: string;
+    } | null>(null)
     const [settings, setSettings] = useState<Settings>({
         models: {
             title: "Models",
@@ -74,10 +83,16 @@ export default function SettingsPage() {
             settings: [
                 {
                     name: "Default Model",
-                    value: "gpt-4",
+                    value: "gpt-4.1",
                     type: "select",
                     options: Models.map(m => m.model),
                     description: "Select your default AI model"
+                },
+                {
+                    name: "System Prompt",
+                    value: "",
+                    type: "textarea",
+                    description: "Enter your system prompt"
                 }
             ]
         },
@@ -132,6 +147,7 @@ export default function SettingsPage() {
         if (userId) {
             fetchApiKeys()
             fetchCustomModels()
+            fetchRequestLimit()
         }
     }, [userId])
 
@@ -159,12 +175,70 @@ export default function SettingsPage() {
         }
     }
 
+    const fetchRequestLimit = async () => {
+        try {
+            const response = await fetch(`/api/settings/limits?userId=${userId}`)
+            if (!response.ok) throw new Error('Failed to fetch request limit')
+            const data = await response.json()
+            setRequestLimit(data[0] || null)
+        } catch (error) {
+            console.error('Error fetching request limit:', error)
+            toast.error('Failed to fetch request limit')
+        }
+    }
+
+    const updateRequestLimit = async (maxRequests: number) => {
+        try {
+            const response = await fetch('/api/settings/limits', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, maxRequests })
+            })
+            if (!response.ok) throw new Error('Failed to update request limit')
+            await fetchRequestLimit()
+            toast.success('Request limit updated successfully')
+        } catch (error) {
+            console.error('Error updating request limit:', error)
+            toast.error('Failed to update request limit')
+        }
+    }
+
+    const resetRequestLimit = async () => {
+        try {
+            const response = await fetch('/api/settings/limits/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId })
+            })
+            if (!response.ok) throw new Error('Failed to reset request limit')
+            await fetchRequestLimit()
+            toast.success('Request limit reset successfully')
+        } catch (error) {
+            console.error('Error resetting request limit:', error)
+            toast.error('Failed to reset request limit')
+        }
+    }
+
+    const resetRateLimit = async () => {
+        try {
+            const response = await fetch('/dev/rate-limit/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            if (!response.ok) throw new Error('Failed to reset rate limit')
+            toast.success('Rate limit reset successfully')
+        } catch (error) {
+            console.error('Error resetting rate limit:', error)
+            toast.error('Failed to reset rate limit')
+        }
+    }
+
     const addApiKey = async (key: Omit<APIKey, 'id'>) => {
         try {
             const response = await fetch('/api/settings/keys', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...key, userId })
+                body: JSON.stringify({ ...key, userId, enabled: true })
             })
             if (!response.ok) throw new Error('Failed to add API key')
             await fetchApiKeys()
@@ -172,6 +246,58 @@ export default function SettingsPage() {
         } catch (error) {
             console.error('Error adding API key:', error)
             toast.error('Failed to add API key')
+        }
+    }
+
+    const saveApiKey = async (provider: string) => {
+        const keyValue = tempKeyValues[provider] || ''
+        if (!keyValue.trim()) {
+            toast.error('Please enter an API key')
+            return
+        }
+
+        try {
+            const existingKey = apiKeys.find(k => k.provider === provider)
+            if (existingKey) {
+                // Update existing key
+                const response = await fetch(`/api/settings/keys/${existingKey.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: keyValue, enabled: true })
+                })
+                if (!response.ok) throw new Error('Failed to update API key')
+            } else {
+                // Add new key
+                await addApiKey({
+                    provider,
+                    key: keyValue,
+                    enabled: true
+                })
+            }
+            
+            // Clear temp value
+            setTempKeyValues(prev => ({ ...prev, [provider]: '' }))
+            await fetchApiKeys()
+            toast.success(`${provider} API key saved successfully`)
+        } catch (error) {
+            console.error('Error saving API key:', error)
+            toast.error('Failed to save API key')
+        }
+    }
+
+    const toggleApiKey = async (keyId: string, enabled: boolean) => {
+        try {
+            const response = await fetch(`/api/settings/keys/${keyId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            })
+            if (!response.ok) throw new Error('Failed to toggle API key')
+            await fetchApiKeys()
+            toast.success(`API key ${enabled ? 'enabled' : 'disabled'} successfully`)
+        } catch (error) {
+            console.error('Error toggling API key:', error)
+            toast.error('Failed to toggle API key')
         }
     }
 
@@ -306,6 +432,26 @@ export default function SettingsPage() {
                         }}
                     />
                 );
+            case "textarea":
+                return (
+                    <Textarea
+                        value={setting.value as string}
+                        onChange={(e) => {
+                            const updatedSettings = {
+                                ...settings,
+                                [activeTab]: {
+                                    ...settings[activeTab],
+                                    settings: settings[activeTab].settings.map((s: Setting) => 
+                                        s.name === setting.name 
+                                            ? { ...s, value: e.target.value }
+                                            : s
+                                    )
+                                }
+                            };
+                            setSettings(updatedSettings);
+                        }}
+                    />
+                );
             case "boolean_group":
             case "text_group":
             case "number_group":
@@ -371,142 +517,244 @@ export default function SettingsPage() {
             <CardHeader>
                 <CardTitle>API Keys</CardTitle>
                 <CardDescription>
-                    Manage your API keys for different providers
+                    Manage your API keys for different providers. Use your own keys for free, or use ours for 1 request each.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-                {/* Existing API Keys */}
                 <div className="space-y-4">
-                    {apiKeys.map((key) => (
-                        <div key={key.id} className="flex items-center justify-between p-4 border rounded-lg">
-                            <div className="space-y-1">
-                                <div className="font-medium">
-                                    {key.isCustom ? key.customName : key.provider}
-                                </div>
-                                {key.isCustom && (
-                                    <div className="text-sm text-muted-foreground">
-                                        Base URL: {key.customBaseUrl}
-                                    </div>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    type="password"
-                                    value={key.key}
-                                    readOnly
-                                    className="w-[200px]"
+                    {/* OpenAI */}
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="space-y-1">
+                            <div className="font-medium">OpenAI</div>
+                            <div className="text-sm text-muted-foreground">GPT-4, GPT-3.5, and more</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="password"
+                                placeholder="Enter OpenAI API key"
+                                value={tempKeyValues["OpenAI"] ?? apiKeys.find(k => k.provider === "OpenAI")?.key ?? ""}
+                                onChange={(e) => {
+                                    setTempKeyValues(prev => ({ ...prev, "OpenAI": e.target.value }))
+                                }}
+                                className="w-[200px]"
+                            />
+                            <Button
+                                size="sm"
+                                onClick={() => saveApiKey("OpenAI")}
+                                disabled={!tempKeyValues["OpenAI"]?.trim()}
+                            >
+                                Save
+                            </Button>
+                            {apiKeys.find(k => k.provider === "OpenAI") && (
+                                <Switch
+                                    checked={apiKeys.find(k => k.provider === "OpenAI")?.enabled ?? false}
+                                    onCheckedChange={(enabled) => {
+                                        const key = apiKeys.find(k => k.provider === "OpenAI")
+                                        if (key) toggleApiKey(key.id, enabled)
+                                    }}
                                 />
+                            )}
+                            {apiKeys.find(k => k.provider === "OpenAI") && (
                                 <Button
                                     variant="ghost"
-                                    size="icon"
-                                    onClick={() => removeApiKey(key.id)}
+                                    size="sm"
+                                    onClick={() => {
+                                        const key = apiKeys.find(k => k.provider === "OpenAI")
+                                        if (key) removeApiKey(key.id)
+                                    }}
                                 >
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
-                            </div>
+                            )}
                         </div>
-                    ))}
-                </div>
+                    </div>
 
-                {/* Add API Key Dialog */}
-                <Dialog>
-                    <DialogTrigger asChild>
-                        <Button variant="outline" className="w-full">
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add API Key
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Add API Key</DialogTitle>
-                            <DialogDescription>
-                                Add an API key for an existing provider or create a custom provider
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                                <Label>Provider</Label>
-                                <Select
-                                    onValueChange={(value) => {
-                                        setNewProvider(prev => ({ ...prev, name: value }))
+                    {/* Anthropic */}
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="space-y-1">
+                            <div className="font-medium">Anthropic</div>
+                            <div className="text-sm text-muted-foreground">Claude 3.5, Claude 3.7, and more</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="password"
+                                placeholder="Enter Anthropic API key"
+                                value={tempKeyValues["Anthropic"] ?? apiKeys.find(k => k.provider === "Anthropic")?.key ?? ""}
+                                onChange={(e) => {
+                                    setTempKeyValues(prev => ({ ...prev, "Anthropic": e.target.value }))
+                                }}
+                                className="w-[200px]"
+                            />
+                            <Button
+                                size="sm"
+                                onClick={() => saveApiKey("Anthropic")}
+                                disabled={!tempKeyValues["Anthropic"]?.trim()}
+                            >
+                                Save
+                            </Button>
+                            {apiKeys.find(k => k.provider === "Anthropic") && (
+                                <Switch
+                                    checked={apiKeys.find(k => k.provider === "Anthropic")?.enabled ?? false}
+                                    onCheckedChange={(enabled) => {
+                                        const key = apiKeys.find(k => k.provider === "Anthropic")
+                                        if (key) toggleApiKey(key.id, enabled)
+                                    }}
+                                />
+                            )}
+                            {apiKeys.find(k => k.provider === "Anthropic") && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        const key = apiKeys.find(k => k.provider === "Anthropic")
+                                        if (key) removeApiKey(key.id)
                                     }}
                                 >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a provider" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="OpenAI">OpenAI</SelectItem>
-                                        <SelectItem value="Anthropic">Anthropic</SelectItem>
-                                        <SelectItem value="OpenRouter">OpenRouter</SelectItem>
-                                        <SelectItem value="Google">Google (Gemini)</SelectItem>
-                                        <SelectItem value="custom">Custom Provider</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            {newProvider.name === "custom" && (
-                                <>
-                                    <div className="space-y-2">
-                                        <Label>Custom Provider Name</Label>
-                                        <Input
-                                            placeholder="Enter provider name"
-                                            value={newProvider.customName || ""}
-                                            onChange={(e) => setNewProvider(prev => ({ ...prev, customName: e.target.value }))}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label>Base URL</Label>
-                                        <Input
-                                            placeholder="Enter base URL"
-                                            value={newProvider.baseUrl}
-                                            onChange={(e) => setNewProvider(prev => ({ ...prev, baseUrl: e.target.value }))}
-                                        />
-                                    </div>
-                                </>
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
                             )}
-
-                            <div className="space-y-2">
-                                <Label>API Key</Label>
-                                <Input
-                                    type="password"
-                                    placeholder="Enter API key"
-                                    value={newProvider.apiKey}
-                                    onChange={(e) => setNewProvider(prev => ({ ...prev, apiKey: e.target.value }))}
-                                />
-                            </div>
                         </div>
-                        <DialogFooter>
-                            <Button onClick={() => {
-                                if (newProvider.name === "custom") {
-                                    if (!newProvider.customName || !newProvider.baseUrl || !newProvider.apiKey) {
-                                        toast.error("Please fill in all fields for custom provider")
-                                        return
-                                    }
-                                    addApiKey({
-                                        provider: newProvider.customName,
-                                        key: newProvider.apiKey,
-                                        isCustom: true,
-                                        customName: newProvider.customName,
-                                        customBaseUrl: newProvider.baseUrl
-                                    })
-                                } else {
-                                    if (!newProvider.name || !newProvider.apiKey) {
-                                        toast.error("Please fill in all required fields")
-                                        return
-                                    }
-                                    addApiKey({
-                                        provider: newProvider.name,
-                                        key: newProvider.apiKey
-                                    })
-                                }
-                                setNewProvider({ name: "", baseUrl: "", apiKey: "", customName: "" })
-                            }}>Add API Key</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                    </div>
+
+                    {/* OpenRouter */}
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="space-y-1">
+                            <div className="font-medium">OpenRouter</div>
+                            <div className="text-sm text-muted-foreground">Access to 100+ models</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="password"
+                                placeholder="Enter OpenRouter API key"
+                                value={tempKeyValues["OpenRouter"] ?? apiKeys.find(k => k.provider === "OpenRouter")?.key ?? ""}
+                                onChange={(e) => {
+                                    setTempKeyValues(prev => ({ ...prev, "OpenRouter": e.target.value }))
+                                }}
+                                className="w-[200px]"
+                            />
+                            <Button
+                                size="sm"
+                                onClick={() => saveApiKey("OpenRouter")}
+                                disabled={!tempKeyValues["OpenRouter"]?.trim()}
+                            >
+                                Save
+                            </Button>
+                            {apiKeys.find(k => k.provider === "OpenRouter") && (
+                                <Switch
+                                    checked={apiKeys.find(k => k.provider === "OpenRouter")?.enabled ?? false}
+                                    onCheckedChange={(enabled) => {
+                                        const key = apiKeys.find(k => k.provider === "OpenRouter")
+                                        if (key) toggleApiKey(key.id, enabled)
+                                    }}
+                                />
+                            )}
+                            {apiKeys.find(k => k.provider === "OpenRouter") && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        const key = apiKeys.find(k => k.provider === "OpenRouter")
+                                        if (key) removeApiKey(key.id)
+                                    }}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Google Gemini */}
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="space-y-1">
+                            <div className="font-medium">Google (Gemini)</div>
+                            <div className="text-sm text-muted-foreground">Gemini 2.0, Gemini 2.5, and more</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="password"
+                                placeholder="Enter Google API key"
+                                value={tempKeyValues["Google"] ?? apiKeys.find(k => k.provider === "Google")?.key ?? ""}
+                                onChange={(e) => {
+                                    setTempKeyValues(prev => ({ ...prev, "Google": e.target.value }))
+                                }}
+                                className="w-[200px]"
+                            />
+                            <Button
+                                size="sm"
+                                onClick={() => saveApiKey("Google")}
+                                disabled={!tempKeyValues["Google"]?.trim()}
+                            >
+                                Save
+                            </Button>
+                            {apiKeys.find(k => k.provider === "Google") && (
+                                <Switch
+                                    checked={apiKeys.find(k => k.provider === "Google")?.enabled ?? false}
+                                    onCheckedChange={(enabled) => {
+                                        const key = apiKeys.find(k => k.provider === "Google")
+                                        if (key) toggleApiKey(key.id, enabled)
+                                    }}
+                                />
+                            )}
+                            {apiKeys.find(k => k.provider === "Google") && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        const key = apiKeys.find(k => k.provider === "Google")
+                                        if (key) removeApiKey(key.id)
+                                    }}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </CardContent>
         </Card>
+    )
+
+    const renderRequestLimitSection = () => (
+        <div className="space-y-2">
+            <div className="space-y-0.5">
+                <Label>Request Limit</Label>
+                <p className="text-sm text-muted-foreground">
+                    Your monthly request limit for all AI models
+                </p>
+            </div>
+            <div className="flex items-center gap-4">
+                <div className="flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium">
+                            {requestLimit ? `${requestLimit.requestCount}/${requestLimit.maxRequests} requests` : '0/250 requests'}
+                        </span>
+                        {requestLimit && (
+                            <span className="text-xs text-muted-foreground">
+                                Resets on {new Date(requestLimit.resetAt).toLocaleDateString()}
+                            </span>
+                        )}
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2">
+                        <div 
+                            className="bg-primary h-2 rounded-full transition-all duration-300"
+                            style={{ 
+                                width: requestLimit 
+                                    ? `${(requestLimit.requestCount / requestLimit.maxRequests) * 100}%` 
+                                    : '0%' 
+                            }}
+                        />
+                    </div>
+                </div>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetRequestLimit}
+                    className="shrink-0"
+                >
+                    Reset Limit
+                </Button>
+            </div>
+        </div>
     )
 
     const renderCustomModelsSection = () => (
@@ -695,6 +943,25 @@ export default function SettingsPage() {
                                     {renderSetting(setting)}
                                 </div>
                             ))}
+                            {activeTab === "account" && renderRequestLimitSection()}
+                            {activeTab === "account" && (
+                                <div className="space-y-2">
+                                    <div className="space-y-0.5">
+                                        <Label>Rate Limit (Development)</Label>
+                                        <p className="text-sm text-muted-foreground">
+                                            Reset your API rate limit for development purposes
+                                        </p>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={resetRateLimit}
+                                        className="w-fit"
+                                    >
+                                        Reset Rate Limit
+                                    </Button>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -702,7 +969,6 @@ export default function SettingsPage() {
                     {activeTab === "models" && (
                         <>
                             {renderApiKeySection()}
-                            {renderCustomModelsSection()}
                         </>
                     )}
                 </div>

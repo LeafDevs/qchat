@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
 import { streamText } from 'ai';
-import { getProviderModel, openRouterTextStream, Models, initializeProviders } from '@/lib/AI';
+import { getProviderModelWithKey, openRouterTextStreamWithKey, Models, type ModelProviders } from '@/lib/AI';
 import { db } from '@/lib/db';
-
-// Initialize providers once when the module loads
-const providers = initializeProviders();
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   try {
@@ -30,20 +28,124 @@ export async function POST(req: Request) {
       );
     }
 
-    try {
-      console.log(`[Chat API] Starting chat processing for chatId: ${chatId}, model: ${model}`);
+    // Get the model provider
+    const modelProvider = Models.find(m=>m.model===model)?.provider as ModelProviders | undefined;
+    if (!modelProvider) {
+      return NextResponse.json(
+        { error: 'Model not supported' },
+        { status: 400 }
+      );
+    }
+
+    // Fetch user's API key for this provider
+    const userApiKey = await db.get(
+      'SELECT key FROM apiKey WHERE userId = ? AND provider = ? AND enabled = 1',
+      [userId, modelProvider]
+    );
+
+    let usingUserKey = false;
+    let apiKey = '';
+
+    if (userApiKey?.key) {
+      // User has their own API key - use it for free
+      usingUserKey = true;
+      apiKey = userApiKey.key;
+      console.log(`[Chat API] Using user's ${modelProvider} API key (free)`);
+    } else {
+      // User doesn't have API key - use environment variable but charge 1 request
+      usingUserKey = false;
       
-      // Fetch existing messages for context
-      const previousMessages = await db.all(
-        'SELECT role, content FROM message WHERE chatId = ? ORDER BY createdAt ASC',
+      // Get the appropriate environment variable
+      switch (modelProvider) {
+        case 'OpenAI':
+          apiKey = process.env.OPENAI_API_KEY || '';
+          break;
+        case 'Anthropic':
+          apiKey = process.env.ANTHROPIC_API_KEY || '';
+          break;
+        case 'Google':
+          apiKey = process.env.GEMINI_API_KEY || '';
+          break;
+        case 'OpenRouter':
+          apiKey = process.env.OPENROUTER_API_KEY || '';
+          break;
+        default:
+          return NextResponse.json(
+            { error: 'Provider not supported' },
+            { status: 400 }
+          );
+      }
+
+      if (!apiKey) {
+        return NextResponse.json(
+          { error: `No API key available for ${modelProvider}. Please add your own API key in settings or contact support.` },
+          { status: 400 }
+        );
+      }
+
+      console.log(`[Chat API] Using environment ${modelProvider} API key (charging 1 request)`);
+    }
+
+    // Check request limit
+    const requestLimit = await db.get(
+      'SELECT * FROM requestLimit WHERE userId = ?',
+      [userId]
+    );
+
+    if (requestLimit) {
+      if (requestLimit.requestCount >= requestLimit.maxRequests) {
+        return NextResponse.json(
+          { error: 'Monthly request limit reached' },
+          { status: 429 }
+        );
+      }
+
+      // Update request count (charge 1 request if using environment key, 0 if using user key)
+      const requestCost = usingUserKey ? 0 : 1;
+      await db.run(
+        'UPDATE requestLimit SET requestCount = requestCount + ?, updatedAt = ? WHERE id = ?',
+        [requestCost, new Date().toISOString(), requestLimit.id]
+      );
+    } else {
+      // Create new request limit (charge 1 request if using environment key, 0 if using user key)
+      const requestCost = usingUserKey ? 0 : 1;
+      const id = crypto.randomUUID();
+      const now = new Date();
+      const resetAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // Reset in 30 days
+
+      await db.run(
+        `INSERT INTO requestLimit (
+          id, userId, requestCount, maxRequests, resetAt, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id, userId, requestCost, 250,
+          resetAt.toISOString(), now.toISOString(), now.toISOString()
+        ]
+      );
+    }
+
+    try {
+      console.log(`[Chat API] Starting chat processing for chatId: ${chatId}, model: ${model}, usingUserKey: ${usingUserKey}`);
+      
+      type ChatRole = 'user' | 'assistant' | 'system';
+      
+      // Only fetch previous messages if this is not the first message in the chat
+      const messageCount = await db.get(
+        'SELECT COUNT(*) as count FROM message WHERE chatId = ?',
         [chatId]
       );
-      console.log(`[Chat API] Retrieved ${previousMessages.length} previous messages for context`);
-
-      type ChatRole = 'user' | 'assistant' | 'system';
-      const contextMessages = (
-        previousMessages as { role: string; content: string }[]
-      ).map((m) => ({ role: m.role as ChatRole, content: m.content }));
+      
+      let contextMessages: { role: ChatRole; content: string }[] = [];
+      
+      if (messageCount.count > 0) {
+        // Fetch existing messages for context only if there are previous messages
+        const previousMessages = await db.all(
+          'SELECT role, content FROM message WHERE chatId = ? ORDER BY createdAt ASC',
+          [chatId]
+        );
+        console.log(`[Chat API] Retrieved ${previousMessages.length} previous messages for context`);
+        contextMessages = previousMessages.map((m) => ({ role: m.role as ChatRole, content: m.content }));
+      }
 
       // Append the current user prompt as the last message
       contextMessages.push({ role: 'user', content: prompt });
@@ -73,7 +175,6 @@ export async function POST(req: Request) {
       );
       console.log(`[Chat API] Created temporary assistant message with ID: ${assistantMessageId}`);
 
-      const modelProvider = Models.find(m=>m.model===model)?.provider;
       let assistantResponse = '';
       let chunkCount = 0;
 
@@ -87,21 +188,52 @@ export async function POST(req: Request) {
         try {
           // Handle OpenRouter requests directly
           if (modelProvider === 'OpenRouter') {
+            // Map model names to OpenRouter format if needed
+            let openRouterModel = model;
+            if (model === 'anthropic/claude-4-sonnet' || model === 'anthropic/claude-3.5-sonnet-20241022') {
+              openRouterModel = 'anthropic/claude-3.5-sonnet-20241022';
+            }
+            
+            console.log('[Chat API] OpenRouter request details:', {
+              originalModel: model,
+              openRouterModel,
+              messageCount: contextMessages.length,
+              firstMessage: contextMessages[0],
+              lastMessage: contextMessages[contextMessages.length - 1]
+            });
+
             const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
               headers: {
-                Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                Authorization: `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://qchat.app',
+                'X-Title': 'QChat',
               },
               body: JSON.stringify({
-                model: model,
+                model: openRouterModel,
                 messages: contextMessages,
                 stream: true,
+                temperature: 0.7,
+                max_tokens: 4000,
               }),
             });
 
             if (!response.ok) {
-              throw new Error(`OpenRouter API error: ${response.status}`);
+              const errorText = await response.text();
+              console.error(`OpenRouter API error ${response.status}:`, errorText);
+              console.error('Request details:', {
+                originalModel: model,
+                openRouterModel,
+                messageCount: contextMessages.length,
+                headers: {
+                  Authorization: `Bearer ${apiKey.substring(0, 10)}...`,
+                  'Content-Type': 'application/json',
+                  'HTTP-Referer': 'https://qchat.app',
+                  'X-Title': 'QChat',
+                }
+              });
+              throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
             }
 
             const reader = response.body?.getReader();
@@ -167,25 +299,80 @@ export async function POST(req: Request) {
               }
             }
           } else {
-            // Handle other providers using the initialized providers
-            const providerModel = getProviderModel(model, providers);
-            const streamResult = await streamText({ model: providerModel, messages: contextMessages });
+            // Handle other providers using the API key
+            const providerModelData = getProviderModelWithKey(model, modelProvider, apiKey);
             
-            for await (const chunk of streamResult.textStream) {
-              const text = (typeof chunk === 'string') ? chunk : new TextDecoder().decode(chunk);
-              await writer.write(encoder.encode(text));
-              assistantResponse += text;
-              chunkCount++;
+            if (modelProvider === 'OpenAI') {
+              const result = streamText({
+                model: providerModelData.model,
+                messages: contextMessages,
+                providerOptions: {
+                  openai: {
+                    reasoningSummary: 'detailed', // 'auto' for condensed or 'detailed' for comprehensive
+                  },
+                },
+              });
+              
+              let reasoningText = '';
+              for await (const part of result.fullStream) {
+                if (part.type === 'reasoning') {
+                  reasoningText += part.textDelta;
+                  if (!assistantResponse.includes('<think>')) {
+                    await writer.write(encoder.encode('<think>'));
+                    assistantResponse += '<think>';
+                  }
+                  await writer.write(encoder.encode(part.textDelta));
+                  assistantResponse += part.textDelta;
+                  chunkCount++;
+                } else if (part.type === 'text-delta') {
+                  if (reasoningText) {
+                    if (!assistantResponse.includes('</think>')) {
+                      await writer.write(encoder.encode('</think>'));
+                      assistantResponse += '</think>';
+                    }
+                    reasoningText = '';
+                  }
+                  await writer.write(encoder.encode(part.textDelta));
+                  assistantResponse += part.textDelta;
+                  chunkCount++;
 
-              // Update database every 10 chunks
-              if (chunkCount % 10 === 0) {
-                await db.run(
-                  'UPDATE message SET content = ?, updatedAt = ? WHERE id = ?',
-                  [assistantResponse, new Date(), assistantMessageId]
-                );
-                console.log(`[Chat API] Processed ${chunkCount} chunks, current response length: ${assistantResponse.length}`);
+                  if (chunkCount % 10 === 0) {
+                    await db.run(
+                      'UPDATE message SET content = ?, updatedAt = ? WHERE id = ?',
+                      [assistantResponse, new Date(), assistantMessageId]
+                    );
+                  }
+                }
+              }
+            } else {
+              // Handle other providers using streamText
+              const streamResult = await streamText({ 
+                model: providerModelData.model, 
+                messages: contextMessages,
+                providerOptions: modelProvider === 'Anthropic' ? {
+                  anthropic: {
+                    thinking: { type: 'enabled', budgetTokens: 500 }
+                  }
+                } : undefined
+              });
+              
+              for await (const chunk of streamResult.textStream) {
+                const text = (typeof chunk === 'string') ? chunk : new TextDecoder().decode(chunk);
+                await writer.write(encoder.encode(text));
+                assistantResponse += text;
+                chunkCount++;
+
+                if (chunkCount % 10 === 0) {
+                  await db.run(
+                    'UPDATE message SET content = ?, updatedAt = ? WHERE id = ?',
+                    [assistantResponse, new Date(), assistantMessageId]
+                  );
+                  console.log(`[Chat API] Processed ${chunkCount} chunks, current response length: ${assistantResponse.length}`);
+                }
               }
             }
+
+            console.log('[Chat API] Stream processing complete, final response:', assistantResponse);
           }
 
           // Final database updates

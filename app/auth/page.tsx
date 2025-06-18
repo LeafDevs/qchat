@@ -35,38 +35,24 @@ export default function AuthPage() {
         <CardContent>
           <Button
             onClick={async () => {
-
               await signIn.social(
-
-              {
-
-                provider: "google",
-
-                callbackURL: "/"
-
-              },
-
-              {
-
-                onRequest: () => {
-
-                   setLoading(true);
-
+                {
+                  provider: "google",
+                  callbackURL: "/"
                 },
-
-                onResponse: () => {
-
-                   setLoading(false);
-
-                },
-
-               },
-
+                {
+                  onRequest: () => {
+                    setLoading(true);
+                  },
+                  onResponse: () => {
+                    setLoading(false);
+                  },
+                }
               );
-
             }}
-            className="w-full bg-white text-black hover:bg-gray-100"
+            className="w-full bg-background text-foreground hover:bg-accent hover:text-accent-foreground border-border/40"
             variant="outline"
+            disabled={loading}
           >
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
@@ -86,7 +72,7 @@ export default function AuthPage() {
                 fill="#EA4335"
               />
             </svg>
-            Continue with Google
+            {loading ? "Loading..." : "Continue with Google"}
           </Button>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">

@@ -11,6 +11,8 @@ import { ChatProvider, useChat } from "@/lib/chat-context";
 function ChatLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAuthPage = pathname === "/auth";
+  const isSettingsPage = pathname === "/settings";
+  const isChatPage = pathname === "/" || pathname.startsWith("/chat/");
   const { currentModel, setCurrentModel, isLoading, handleSendMessage } = useChat();
 
   if (isAuthPage) {
@@ -32,14 +34,16 @@ function ChatLayoutContent({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto min-h-0">
           {children}
         </main>
-        <div className="sticky bottom-0 left-0 right-0 z-20">
-          <ChatInput 
-            onSubmit={handleSendMessage}
-            isLoading={isLoading}
-            currentModel={currentModel}
-            onModelChange={setCurrentModel}
-          />
-        </div>
+        {isChatPage && (
+          <div className="sticky bottom-0 left-0 right-0 z-20">
+            <ChatInput 
+              onSubmit={handleSendMessage}
+              isLoading={isLoading}
+              currentModel={currentModel}
+              onModelChange={setCurrentModel}
+            />
+          </div>
+        )}
       </SidebarInset>
     </SidebarProvider>
   );

@@ -1,87 +1,78 @@
 'use client'
 
-import * as React from "react"
-import { Moon, Sun } from "lucide-react"
-import { useTheme } from "next-themes"
-import { motion, AnimatePresence } from "framer-motion"
-
-import { Button } from "@/components/ui/button"
+import React, { useState, useEffect } from 'react';
+import { Moon, Sun } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = React.useState(false)
-  const [isAnimating, setIsAnimating] = React.useState(false)
+  const { theme, setTheme } = useTheme();
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  React.useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  if (!mounted) {
-    return null
-  }
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const toggleTheme = () => {
-    setIsAnimating(true)
+    if (isAnimating) return;
+    
+    setIsAnimating(true);
     
     // Create overlay for smooth transition
-    const overlay = document.createElement('div')
-    overlay.className = 'theme-switch-overlay'
-    document.body.appendChild(overlay)
+    const overlay = document.createElement('div');
+    overlay.className = 'theme-switch-overlay';
+    document.body.appendChild(overlay);
     
-    // Trigger overlay animation
-    requestAnimationFrame(() => {
-      overlay.classList.add('active')
-    })
-
-    // Create ripple effect
-    const button = document.querySelector('[data-theme-toggle]') as HTMLElement
+    // Trigger ripple effect
+    const button = document.querySelector('.theme-toggle-button');
     if (button) {
-      const ripple = document.createElement('div')
-      ripple.className = 'absolute inset-0 rounded-full bg-current opacity-20 animate-ping'
-      button.appendChild(ripple)
-      setTimeout(() => ripple.remove(), 600)
+      const ripple = document.createElement('div');
+      ripple.className = 'absolute inset-0 rounded-full bg-current opacity-20';
+      button.appendChild(ripple);
+      
+      setTimeout(() => {
+        ripple.remove();
+      }, 300);
     }
     
-    // Change theme after brief delay
+    // Change theme after a brief delay
     setTimeout(() => {
-      setTheme(theme === "dark" ? "light" : "dark")
+      setTheme(theme === 'dark' ? 'light' : 'dark');
+      overlay.classList.add('active');
       
-      // Remove overlay after theme change
       setTimeout(() => {
-        overlay.classList.remove('active')
-        setTimeout(() => {
-          document.body.removeChild(overlay)
-          setIsAnimating(false)
-        }, 300)
-      }, 100)
-    }, 150)
-  }
+        overlay.remove();
+        setIsAnimating(false);
+      }, 300);
+    }, 50);
+  };
+
+  if (!mounted) return null;
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
+    <button
       onClick={toggleTheme}
-      data-theme-toggle
-      className="relative hover:bg-accent/50"
       disabled={isAnimating}
+      className="theme-toggle-button relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      aria-label="Toggle theme"
     >
       <AnimatePresence mode="wait">
         <motion.div
           key={theme}
-          initial={{ scale: 0.5, opacity: 0, rotate: -180 }}
-          animate={{ scale: 1, opacity: 1, rotate: 0 }}
-          exit={{ scale: 0.5, opacity: 0, rotate: 180 }}
-          transition={{ duration: 0.3, ease: "easeInOut" }}
+          initial={{ opacity: 0, scale: 0.5, rotate: -180 }}
+          animate={{ opacity: 1, scale: 1, rotate: 0 }}
+          exit={{ opacity: 0, scale: 0.5, rotate: 180 }}
+          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          className="w-5 h-5"
         >
-          {theme === "dark" ? (
-            <Moon className="h-4 w-4" />
+          {theme === 'dark' ? (
+            <Sun className="w-5 h-5" />
           ) : (
-            <Sun className="h-4 w-4" />
+            <Moon className="w-5 h-5" />
           )}
         </motion.div>
       </AnimatePresence>
-      <span className="sr-only">Toggle theme</span>
-    </Button>
-  )
+    </button>
+  );
 } 

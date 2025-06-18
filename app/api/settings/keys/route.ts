@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        const { userId, provider, key, isCustom, customName, customBaseUrl } = body
+        const { userId, provider, key, enabled = true, isCustom, customName, customBaseUrl } = body
 
         if (!userId || !provider || !key) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -36,15 +36,43 @@ export async function POST(request: Request) {
         const now = new Date().toISOString()
 
         await db.run(
-            `INSERT INTO apiKey (id, userId, provider, key, isCustom, customName, customBaseUrl, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [id, userId, provider, key, isCustom ? 1 : 0, customName, customBaseUrl, now, now]
+            `INSERT INTO apiKey (id, userId, provider, key, enabled, isCustom, customName, customBaseUrl, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [id, userId, provider, key, enabled ? 1 : 0, isCustom ? 1 : 0, customName, customBaseUrl, now, now]
         )
 
         return NextResponse.json({ id, ...body })
     } catch (error) {
         console.error('Error adding API key:', error)
         return NextResponse.json({ error: 'Failed to add API key' }, { status: 500 })
+    }
+}
+
+// PUT /api/settings/keys/:id
+export async function PUT(request: Request, { params }: { params: { id: string } }) {
+    try {
+        const id = params.id
+        const body = await request.json()
+        const { key, enabled } = body
+
+        if (key !== undefined) {
+            await db.run(
+                'UPDATE apiKey SET key = ?, updatedAt = ? WHERE id = ?',
+                [key, new Date().toISOString(), id]
+            )
+        }
+
+        if (enabled !== undefined) {
+            await db.run(
+                'UPDATE apiKey SET enabled = ?, updatedAt = ? WHERE id = ?',
+                [enabled ? 1 : 0, new Date().toISOString(), id]
+            )
+        }
+
+        return NextResponse.json({ success: true })
+    } catch (error) {
+        console.error('Error updating API key:', error)
+        return NextResponse.json({ error: 'Failed to update API key' }, { status: 500 })
     }
 }
 

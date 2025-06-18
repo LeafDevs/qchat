@@ -27,10 +27,11 @@ export function RetryDropdown({ onRetry }: RetryDropdownProps) {
     }
     acc[provider].push({
       id: model.model,
-      name: model.model
+      name: model.model,
+      display_name: model.display_name
     });
     return acc;
-  }, {} as Record<string, { id: string; name: string }[]>);
+  }, {} as Record<string, { id: string; name: string; display_name: string }[]>);
 
   return (
     <DropdownMenu>
@@ -43,7 +44,7 @@ export function RetryDropdown({ onRetry }: RetryDropdownProps) {
           <span className="hidden sm:inline">Retry</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-56">
+      <DropdownMenuContent align="start" className="w-56">
         {Object.entries(groupedModels).map(([provider, models]) => (
           <DropdownMenuSub key={provider}>
             <DropdownMenuSubTrigger className="flex items-center gap-2">
@@ -56,7 +57,7 @@ export function RetryDropdown({ onRetry }: RetryDropdownProps) {
                   key={model.id}
                   onClick={() => onRetry(model.id)}
                 >
-                  {model.name}
+                  {model.display_name}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuSubContent>
