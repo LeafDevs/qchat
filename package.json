@@ -22,6 +22,7 @@
     "@radix-ui/react-switch": "^1.2.5",
     "@radix-ui/react-tabs": "^1.1.12",
     "@radix-ui/react-tooltip": "^1.2.7",
+    "@supabase/supabase-js": "^2.50.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/next": "^9.0.0",
     "@upstash/redis": "^1.35.0",

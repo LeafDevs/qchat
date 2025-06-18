@@ -11,23 +11,6 @@ const dbPromise = open({
 async function ensureTables() {
   const db = await dbPromise;
   
-  // First, check if the status column exists in the message table
-  const messageTableInfo = await db.all("PRAGMA table_info(message)");
-  // @ts-ignore
-    const hasStatusColumn = messageTableInfo.some((col: any) => col.name === 'status');
-
-  // Check for model column
-  // @ts-ignore
-  const hasModelColumn = messageTableInfo.some((col: any) => col.name === 'model');
-
-  // Check for previousContent column
-  const hasPreviousContentColumn = messageTableInfo.some((col: any) => col.name === 'previousContent');
-
-  // Check for enabled column in apiKey table
-  const apiKeyTableInfo = await db.all("PRAGMA table_info(apiKey)");
-  // @ts-ignore
-  const hasEnabledColumn = apiKeyTableInfo.some((col: any) => col.name === 'enabled');
-
   // Add CREATE TABLE IF NOT EXISTS statements for all required tables
   await db.exec(`
     CREATE TABLE IF NOT EXISTS user (
@@ -50,6 +33,7 @@ async function ensureTables() {
       content TEXT,
       role TEXT,
       status TEXT DEFAULT 'complete',
+      model TEXT,
       previousContent TEXT,
       createdAt DATETIME,
       updatedAt DATETIME,
@@ -131,54 +115,42 @@ async function ensureTables() {
     );
   `);
 
-  // If the status column doesn't exist, add it
-  if (!hasStatusColumn) {
-    try {
-      await db.exec(`
-        ALTER TABLE message ADD COLUMN status TEXT DEFAULT 'complete';
-        UPDATE message SET status = 'complete' WHERE status IS NULL;
-      `);
+  // Check and add missing columns safely
+  try {
+    // Check if status column exists in message table
+    const messageTableInfo = await db.all("PRAGMA table_info(message)");
+    const hasStatusColumn = messageTableInfo.some((col: any) => col.name === 'status');
+    const hasModelColumn = messageTableInfo.some((col: any) => col.name === 'model');
+    const hasPreviousContentColumn = messageTableInfo.some((col: any) => col.name === 'previousContent');
+
+    // Add missing columns only if they don't exist
+    if (!hasStatusColumn) {
+      await db.exec(`ALTER TABLE message ADD COLUMN status TEXT DEFAULT 'complete'`);
       console.log('Added status column to message table');
-    } catch (error) {
-      console.error('Error adding status column:', error);
     }
-  }
 
-  // If the model column doesn't exist, add it
-  if (!hasModelColumn) {
-    try {
-      await db.exec(`
-        ALTER TABLE message ADD COLUMN model TEXT;
-      `);
+    if (!hasModelColumn) {
+      await db.exec(`ALTER TABLE message ADD COLUMN model TEXT`);
       console.log('Added model column to message table');
-    } catch (error) {
-      console.error('Error adding model column:', error);
     }
-  }
 
-  // If the previousContent column doesn't exist, add it
-  if (!hasPreviousContentColumn) {
-    try {
-      await db.exec(`
-        ALTER TABLE message ADD COLUMN previousContent TEXT;
-      `);
+    if (!hasPreviousContentColumn) {
+      await db.exec(`ALTER TABLE message ADD COLUMN previousContent TEXT`);
       console.log('Added previousContent column to message table');
-    } catch (error) {
-      console.error('Error adding previousContent column:', error);
     }
-  }
 
-  // If the enabled column doesn't exist in apiKey table, add it
-  if (!hasEnabledColumn) {
-    try {
-      await db.exec(`
-        ALTER TABLE apiKey ADD COLUMN enabled BOOLEAN DEFAULT true;
-        UPDATE apiKey SET enabled = true WHERE enabled IS NULL;
-      `);
+    // Check if enabled column exists in apiKey table
+    const apiKeyTableInfo = await db.all("PRAGMA table_info(apiKey)");
+    const hasEnabledColumn = apiKeyTableInfo.some((col: any) => col.name === 'enabled');
+
+    if (!hasEnabledColumn) {
+      await db.exec(`ALTER TABLE apiKey ADD COLUMN enabled BOOLEAN DEFAULT true`);
       console.log('Added enabled column to apiKey table');
-    } catch (error) {
-      console.error('Error adding enabled column:', error);
     }
+
+  } catch (error) {
+    console.error('Error checking/adding columns:', error);
+    // Continue execution even if column operations fail
   }
 }
 
