@@ -1,4 +1,4 @@
-import { Brain, Zap, Globe, MessageSquare, Server, Bot } from "lucide-react"
+import { Bot } from "lucide-react"
 import OllamaIcon from "./icons/Ollama";
 import AnthropicIcon from "./icons/Anthropic";
 import OpenAIIcon from "./icons/OpenAI";

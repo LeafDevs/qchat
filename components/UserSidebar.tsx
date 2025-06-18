@@ -1,12 +1,11 @@
 'use client'
 
-import { Calendar, CreditCard, Home, Inbox, LogOut, MessageSquare, Plus, Search, Settings, User, Trash2, MoreVertical } from "lucide-react"
-import { useRouter, usePathname, useParams } from "next/navigation"
+import { LogOut, MessageSquare, Plus, User, Trash2, MoreVertical } from "lucide-react"
+import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { useSession, signOut } from "@/lib/auth-client"
 import { useState, useEffect, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { db } from "@/lib/db"
 import {
   Sidebar,
   SidebarContent,
@@ -19,7 +18,6 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "@/components/ui/sidebar"
-import { ProviderIcon } from "./ProviderIcons"
 import { cn } from "@/lib/utils"
 import {
   DropdownMenu,

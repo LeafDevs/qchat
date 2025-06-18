@@ -73,11 +73,11 @@ export async function POST(request: Request) {
 }
 
 // PATCH /api/settings/limits/:id
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
+        const { id } = await params
         const body = await request.json()
         const { requestCount, maxRequests } = body
-        const id = params.id
 
         const now = new Date()
         const updates = []

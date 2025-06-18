@@ -49,9 +49,9 @@ export async function POST(request: Request) {
 }
 
 // PUT /api/settings/keys/:id
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
-        const id = params.id
+        const { id } = await params
         const body = await request.json()
         const { key, enabled } = body
 
@@ -77,9 +77,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 }
 
 // DELETE /api/settings/keys/:id
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
-        const id = params.id
+        const { id } = await params
         await db.run('DELETE FROM apiKey WHERE id = ?', [id])
         return NextResponse.json({ success: true })
     } catch (error) {

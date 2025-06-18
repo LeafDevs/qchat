@@ -76,6 +76,12 @@ export default function SettingsPage() {
         maxRequests: number;
         resetAt: string;
     } | null>(null)
+    
+    // Add state for system prompt and default model
+    const [systemPrompt, setSystemPrompt] = useState("")
+    const [defaultModel, setDefaultModel] = useState("gpt-4.1")
+    const [isSaving, setIsSaving] = useState(false)
+    
     const [settings, setSettings] = useState<Settings>({
         models: {
             title: "Models",
@@ -83,16 +89,16 @@ export default function SettingsPage() {
             settings: [
                 {
                     name: "Default Model",
-                    value: "gpt-4.1",
+                    value: defaultModel,
                     type: "select",
                     options: Models.map(m => m.model),
                     description: "Select your default AI model"
                 },
                 {
                     name: "System Prompt",
-                    value: "",
+                    value: systemPrompt,
                     type: "textarea",
-                    description: "Enter your system prompt"
+                    description: "Enter your system prompt (optional)"
                 }
             ]
         },
@@ -148,8 +154,46 @@ export default function SettingsPage() {
             fetchApiKeys()
             fetchCustomModels()
             fetchRequestLimit()
+            fetchUserPreferences()
+        }
+        
+        // Load default model from localStorage
+        const savedDefaultModel = localStorage.getItem('qchat-default-model')
+        if (savedDefaultModel) {
+            setDefaultModel(savedDefaultModel)
+        }
+        
+        // Load system prompt from localStorage
+        const savedSystemPrompt = localStorage.getItem('qchat-system-prompt')
+        if (savedSystemPrompt) {
+            setSystemPrompt(savedSystemPrompt)
         }
     }, [userId])
+
+    // Update settings when state changes
+    useEffect(() => {
+        setSettings(prev => ({
+            ...prev,
+            models: {
+                ...prev.models,
+                settings: [
+                    {
+                        name: "Default Model",
+                        value: defaultModel,
+                        type: "select",
+                        options: Models.map(m => m.model),
+                        description: "Select your default AI model"
+                    },
+                    {
+                        name: "System Prompt",
+                        value: systemPrompt,
+                        type: "textarea",
+                        description: "Enter your system prompt (optional)"
+                    }
+                ]
+            }
+        }))
+    }, [defaultModel, systemPrompt])
 
     const fetchApiKeys = async () => {
         try {
@@ -184,6 +228,23 @@ export default function SettingsPage() {
         } catch (error) {
             console.error('Error fetching request limit:', error)
             toast.error('Failed to fetch request limit')
+        }
+    }
+
+    const fetchUserPreferences = async () => {
+        try {
+            const response = await fetch(`/api/settings/preferences?userId=${userId}`)
+            if (!response.ok) throw new Error('Failed to fetch preferences')
+            const data = await response.json()
+            if (data.systemPrompt) {
+                setSystemPrompt(data.systemPrompt)
+            }
+            if (data.defaultModel) {
+                setDefaultModel(data.defaultModel)
+            }
+        } catch (error) {
+            console.error('Error fetching preferences:', error)
+            // Don't show error toast for preferences as they're optional
         }
     }
 
@@ -365,18 +426,22 @@ export default function SettingsPage() {
                     <Select
                         value={setting.value as string}
                         onValueChange={(value) => {
-                            const updatedSettings = {
-                                ...settings,
-                                [activeTab]: {
-                                    ...settings[activeTab],
-                                    settings: settings[activeTab].settings.map((s: Setting) => 
-                                        s.name === setting.name 
-                                            ? { ...s, value }
-                                            : s
-                                    )
-                                }
-                            };
-                            setSettings(updatedSettings);
+                            if (setting.name === "Default Model") {
+                                setDefaultModel(value);
+                            } else {
+                                const updatedSettings = {
+                                    ...settings,
+                                    [activeTab]: {
+                                        ...settings[activeTab],
+                                        settings: settings[activeTab].settings.map((s: Setting) => 
+                                            s.name === setting.name 
+                                                ? { ...s, value }
+                                                : s
+                                        )
+                                    }
+                                };
+                                setSettings(updatedSettings);
+                            }
                         }}
                     >
                         <SelectTrigger>
@@ -437,18 +502,22 @@ export default function SettingsPage() {
                     <Textarea
                         value={setting.value as string}
                         onChange={(e) => {
-                            const updatedSettings = {
-                                ...settings,
-                                [activeTab]: {
-                                    ...settings[activeTab],
-                                    settings: settings[activeTab].settings.map((s: Setting) => 
-                                        s.name === setting.name 
-                                            ? { ...s, value: e.target.value }
-                                            : s
-                                    )
-                                }
-                            };
-                            setSettings(updatedSettings);
+                            if (setting.name === "System Prompt") {
+                                setSystemPrompt(e.target.value);
+                            } else {
+                                const updatedSettings = {
+                                    ...settings,
+                                    [activeTab]: {
+                                        ...settings[activeTab],
+                                        settings: settings[activeTab].settings.map((s: Setting) => 
+                                            s.name === setting.name 
+                                                ? { ...s, value: e.target.value }
+                                                : s
+                                        )
+                                    }
+                                };
+                                setSettings(updatedSettings);
+                            }
                         }}
                     />
                 );
@@ -892,6 +961,36 @@ export default function SettingsPage() {
         </Card>
     )
 
+    const saveSettings = async () => {
+        setIsSaving(true)
+        try {
+            // Save to localStorage
+            localStorage.setItem('qchat-default-model', defaultModel)
+            localStorage.setItem('qchat-system-prompt', systemPrompt)
+            
+            // Save to database if needed (for system prompt)
+            if (userId) {
+                const response = await fetch('/api/settings/preferences', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        userId, 
+                        systemPrompt,
+                        defaultModel 
+                    })
+                })
+                if (!response.ok) throw new Error('Failed to save preferences')
+            }
+            
+            toast.success('Settings saved successfully')
+        } catch (error) {
+            console.error('Error saving settings:', error)
+            toast.error('Failed to save settings')
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
     return (
         <div className="container max-w-5xl py-6 space-y-8 mx-auto">
             <div className="text-center">
@@ -943,6 +1042,24 @@ export default function SettingsPage() {
                                     {renderSetting(setting)}
                                 </div>
                             ))}
+                            {activeTab === "models" && (
+                                <div className="flex justify-end pt-4 border-t">
+                                    <Button 
+                                        onClick={saveSettings} 
+                                        disabled={isSaving}
+                                        className="w-fit"
+                                    >
+                                        {isSaving ? (
+                                            <>
+                                                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                                                Saving...
+                                            </>
+                                        ) : (
+                                            'Save Settings'
+                                        )}
+                                    </Button>
+                                </div>
+                            )}
                             {activeTab === "account" && renderRequestLimitSection()}
                             {activeTab === "account" && (
                                 <div className="space-y-2">

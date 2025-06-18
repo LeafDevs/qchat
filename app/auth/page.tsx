@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { signIn } from "@/lib/auth-client"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
 import React from "react"
 
 export default function AuthPage() {

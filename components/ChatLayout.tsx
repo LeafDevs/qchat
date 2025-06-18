@@ -13,20 +13,22 @@ interface ChatLayoutProps {
 
 export function ChatLayout({ initialChatId, initialMessages = [] }: ChatLayoutProps) {
   const [error, setError] = useState<string | null>(null)
-  const [chatId, setChatId] = useState<string | null>(initialChatId || null)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const lastContentRef = useRef<{ [key: string]: string }>({})
 
   const { data: session } = useSession()
   const userId = session?.user?.id
-  const { messages, setMessages, currentModel, isLoading, setIsLoading } = useChat()
+  const { messages, setMessages, currentModel, isLoading, setIsLoading, chatId, setChatId } = useChat()
 
-  // Initialize messages from props
+  // Initialize messages from props and set chatId
   useEffect(() => {
+    if (initialChatId && initialChatId !== chatId) {
+      setChatId(initialChatId);
+    }
     if (initialMessages.length > 0) {
       setMessages(initialMessages);
     }
-  }, [initialMessages, setMessages]);
+  }, [initialChatId, initialMessages, setMessages, chatId, setChatId]);
 
   const providerName = currentModel.split('-')[0].toLowerCase() || 'openai';
 

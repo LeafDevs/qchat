@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { streamText } from 'ai';
 import { getProviderModelWithKey, openRouterTextStreamWithKey, Models, type ModelProviders } from '@/lib/AI';
 import { db } from '@/lib/db';
-import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   try {
@@ -137,6 +136,18 @@ export async function POST(req: Request) {
       
       let contextMessages: { role: ChatRole; content: string }[] = [];
       
+      // Get user's system prompt
+      const userPreferences = await db.get(
+        'SELECT systemPrompt FROM userPreferences WHERE userId = ?',
+        [userId]
+      );
+      
+      // Add system prompt if it exists
+      if (userPreferences?.systemPrompt) {
+        contextMessages.push({ role: 'system', content: userPreferences.systemPrompt });
+        console.log('[Chat API] Added system prompt to context');
+      }
+      
       if (messageCount.count > 0) {
         // Fetch existing messages for context only if there are previous messages
         const previousMessages = await db.all(
@@ -144,7 +155,7 @@ export async function POST(req: Request) {
           [chatId]
         );
         console.log(`[Chat API] Retrieved ${previousMessages.length} previous messages for context`);
-        contextMessages = previousMessages.map((m) => ({ role: m.role as ChatRole, content: m.content }));
+        contextMessages = contextMessages.concat(previousMessages.map((m) => ({ role: m.role as ChatRole, content: m.content })));
       }
 
       // Append the current user prompt as the last message

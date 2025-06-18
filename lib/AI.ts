@@ -98,17 +98,7 @@ export const Models: ModelConfig[] = [
         hasSearch: false
     },
     {
-        model: "gemini-2.5-pro-preview-06-05",
-        display_name: "Gemini 2.5 Pro",
-        provider: "Google",
-        hasFileUpload: false,
-        hasVision: false,
-        hasThinking: true,
-        hasPDFManipulation: false,
-        hasSearch: false
-    },
-    {
-        model: "deepseek/deepseek-r1-0528:free", // this was used in testing purposes so i didnt waste tokens.
+        model: "deepseek/deepseek-r1-0528:free",
         display_name: "DeepSeek R1 (0528)",
         provider: "OpenRouter",
         hasFileUpload: false,
@@ -225,6 +215,7 @@ export async function openRouterTextStreamWithKey(
   const decoder = new TextDecoder();
   async function* iterator() {
     let buffer = '';
+    // @ts-ignore
     for await (const chunk of res.body as any as AsyncIterable<Uint8Array>) {
       buffer += decoder.decode(chunk, { stream: true });
       const lines = buffer.split('\n');

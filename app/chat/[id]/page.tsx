@@ -4,46 +4,52 @@ import { redirect } from 'next/navigation';
 import { ChatLayout } from '@/components/ChatLayout';
 
 interface ChatPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export default async function ChatPage({ params }: ChatPageProps) {
-  const { id } = await params;
   const session = await getServerSession();
-  const userId = session?.user?.id;
-
-  if (!userId) {
+  
+  if (!session?.user?.id) {
     redirect('/auth');
   }
 
-  // Get chat details and verify ownership
+  const { id: chatId } = await params;
+  
+  if (!chatId) {
+    redirect('/');
+  }
+
+  // Fetch chat and messages
   const chat = await db.get(
     'SELECT * FROM chat WHERE id = ? AND createdBy = ?',
-    [id, userId]
+    [chatId, session.user.id]
   );
 
   if (!chat) {
     redirect('/');
   }
 
-  // Get messages for this chat
   const messages = await db.all(
     'SELECT * FROM message WHERE chatId = ? ORDER BY createdAt ASC',
-    [id]
+    [chatId]
   );
+
+  // Transform messages to include timestamp
+  const formattedMessages = messages.map(msg => ({
+    id: msg.id,
+    role: msg.role,
+    content: msg.content,
+    timestamp: new Date(msg.createdAt),
+    thinking: msg.thinking || undefined
+  }));
 
   return (
     <ChatLayout 
-      initialChatId={id}
-      initialMessages={messages.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        timestamp: new Date(msg.createdAt),
-        thinking: msg.thinking || undefined
-      }))}
+      initialChatId={chatId}
+      initialMessages={formattedMessages} 
     />
   );
 }

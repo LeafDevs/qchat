@@ -67,13 +67,13 @@ export async function POST(request: Request) {
 }
 
 // DELETE /api/settings/models/:id
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
-        const id = params.id
+        const { id } = await params
         await db.run('DELETE FROM customModel WHERE id = ?', [id])
         return NextResponse.json({ success: true })
     } catch (error) {
-        console.error('Error deleting custom model:', error)
-        return NextResponse.json({ error: 'Failed to delete custom model' }, { status: 500 })
+        console.error('Error removing custom model:', error)
+        return NextResponse.json({ error: 'Failed to remove custom model' }, { status: 500 })
     }
 } 

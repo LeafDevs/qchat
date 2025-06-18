@@ -1,6 +1,6 @@
 "use client"
 
-import { User, Bot, Copy, Check, MoreHorizontal, Brain } from "lucide-react"
+import { User, Copy, Check, Brain } from "lucide-react"
 import { ProviderIcon } from "./ProviderIcons"
 import { cn } from "@/lib/utils"
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -16,7 +16,7 @@ import { useSession } from "@/lib/auth-client"
 
 export interface Message {
   id: string
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'error'
   content: string
   timestamp: Date
   thinking?: string
@@ -32,7 +32,7 @@ interface ChatMessageProps {
   provider: string
 }
 
-export function ChatMessage({ message, isLast, onRetry, modelName, provider }: ChatMessageProps) {
+export function ChatMessage({ message, isLast, onRetry, provider }: ChatMessageProps) {
   const { theme } = useTheme()
   const session = useSession().data
   const userName = session?.user?.name || 'You'
@@ -93,6 +93,8 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
           "flex gap-3 sm:gap-4 rounded-lg p-2 sm:p-3 transition-colors duration-200",
           message.role === 'user' 
             ? "bg-transparent hover:bg-muted/20" 
+            : message.role === 'error'
+            ? "bg-red-500/10 hover:bg-red-500/20 border border-red-500/20"
             : "bg-muted/30 hover:bg-muted/40"
         )}>
           {/* Avatar section */}
@@ -109,6 +111,8 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
                 ) : (
                   <User className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" />
                 )
+              ) : message.role === 'error' ? (
+                <div className="w-3 h-3 sm:w-4 sm:h-4 text-red-500">⚠</div>
               ) : (
                 <ProviderIcon provider={provider} />
               )}
@@ -120,7 +124,7 @@ export function ChatMessage({ message, isLast, onRetry, modelName, provider }: C
             {/* Header with role and timestamp */}
             <div className="flex items-center gap-2">
               <span className="font-semibold text-sm">
-                {message.role === 'user' ? userName : "Assistant"}
+                {message.role === 'user' ? userName : message.role === 'error' ? 'Error' : "Assistant"}
               </span>
               <span className="text-xs text-muted-foreground hidden sm:inline">
                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

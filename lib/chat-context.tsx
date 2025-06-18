@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, Dispatch, SetStateAction } from 'react';
+import { createContext, useContext, useState, useCallback, Dispatch, SetStateAction, useEffect } from 'react';
 import { type Message } from '@/components/ChatMessage';
 import { useSession } from '@/lib/auth-client';
+import { useParams, useRouter } from 'next/navigation';
 
 interface ChatContextType {
   messages: Message[];
@@ -12,6 +13,8 @@ interface ChatContextType {
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
   handleSendMessage: (message: string) => Promise<void>;
+  chatId: string | null;
+  setChatId: (id: string | null) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -22,7 +25,30 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const { data: session } = useSession();
+  const params = useParams();
+  const router = useRouter();
   const userId = session?.user?.id;
+
+  // Load default model from localStorage on mount
+  useEffect(() => {
+    const savedDefaultModel = localStorage.getItem('qchat-default-model');
+    if (savedDefaultModel) {
+      setCurrentModel(savedDefaultModel);
+    }
+  }, []);
+
+  // Sync chatId with URL params
+  useEffect(() => {
+    const urlChatId = params?.id as string;
+    if (urlChatId && urlChatId !== chatId) {
+      setChatId(urlChatId);
+      // Don't clear messages here - let the ChatLayout handle loading
+    } else if (!urlChatId && chatId) {
+      // If we're on home page but have a chatId, clear it
+      setChatId(null);
+      setMessages([]);
+    }
+  }, [params?.id, chatId]);
 
   const handleSendMessage = useCallback(async (messageContent: string) => {
     if (!userId) {
@@ -32,7 +58,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     let activeChatId = chatId;
     if (!activeChatId) {
-      // Create a new chat
+      // Only create a new chat if we're not already in one
       const res = await fetch('/api/chat/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -41,6 +67,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
       activeChatId = data.chatId;
       setChatId(activeChatId);
+      // Navigate to the new chat
+      router.push(`/chat/${activeChatId}`);
     }
 
     try {
@@ -112,7 +140,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [userId, currentModel, chatId]);
+  }, [userId, currentModel, chatId, router]);
 
   return (
     <ChatContext.Provider value={{
@@ -123,6 +151,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       setIsLoading,
       handleSendMessage,
+      chatId,
+      setChatId,
     }}>
       {children}
     </ChatContext.Provider>

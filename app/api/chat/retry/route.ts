@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { streamText } from 'ai';
 import { getProviderModelWithKey, Models, type ModelProviders } from '@/lib/AI';
 import { db } from '@/lib/db';
-import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   try {
@@ -144,9 +143,25 @@ export async function POST(req: Request) {
     );
 
     type ChatRole = 'user' | 'assistant' | 'system';
-    const contextMessages = (
-      previousMessages as { role: string; content: string }[]
-    ).map((m) => ({ role: m.role as ChatRole, content: m.content }));
+    
+    // Get user's system prompt
+    const userPreferences = await db.get(
+      'SELECT systemPrompt FROM userPreferences WHERE userId = ?',
+      [userId]
+    );
+    
+    let contextMessages: { role: ChatRole; content: string }[] = [];
+    
+    // Add system prompt if it exists
+    if (userPreferences?.systemPrompt) {
+      contextMessages.push({ role: 'system', content: userPreferences.systemPrompt });
+      console.log('[Retry API] Added system prompt to context');
+    }
+    
+    // Add previous messages
+    contextMessages = contextMessages.concat(
+      (previousMessages as { role: string; content: string }[]).map((m) => ({ role: m.role as ChatRole, content: m.content }))
+    );
 
     // Add the user prompt that triggered this message
     contextMessages.push({ role: 'user', content: prompt });

@@ -13,9 +13,11 @@ async function ensureTables() {
   
   // First, check if the status column exists in the message table
   const messageTableInfo = await db.all("PRAGMA table_info(message)");
-  const hasStatusColumn = messageTableInfo.some((col: any) => col.name === 'status');
+  // @ts-ignore
+    const hasStatusColumn = messageTableInfo.some((col: any) => col.name === 'status');
 
   // Check for model column
+  // @ts-ignore
   const hasModelColumn = messageTableInfo.some((col: any) => col.name === 'model');
 
   // Check for previousContent column
@@ -23,6 +25,7 @@ async function ensureTables() {
 
   // Check for enabled column in apiKey table
   const apiKeyTableInfo = await db.all("PRAGMA table_info(apiKey)");
+  // @ts-ignore
   const hasEnabledColumn = apiKeyTableInfo.some((col: any) => col.name === 'enabled');
 
   // Add CREATE TABLE IF NOT EXISTS statements for all required tables
@@ -117,6 +120,15 @@ async function ensureTables() {
       updatedAt DATETIME,
       FOREIGN KEY (userId) REFERENCES user(id)
     );
+    CREATE TABLE IF NOT EXISTS userPreferences (
+      id TEXT PRIMARY KEY,
+      userId TEXT UNIQUE,
+      systemPrompt TEXT DEFAULT '',
+      defaultModel TEXT DEFAULT 'gpt-4.1',
+      createdAt DATETIME,
+      updatedAt DATETIME,
+      FOREIGN KEY (userId) REFERENCES user(id)
+    );
   `);
 
   // If the status column doesn't exist, add it
@@ -175,14 +187,17 @@ ensureTables().catch(console.error);
 
 // Export a db object that can be used to run SQL queries
 export const db = {
+  // @ts-ignore
   async get(sql: string, params: any[] = []) {
     const db = await dbPromise;
     return db.get(sql, params);
   },
+  // @ts-ignore
   async all(sql: string, params: any[] = []) {
     const db = await dbPromise;
     return db.all(sql, params);
   },
+  // @ts-ignore
   async run(sql: string, params: any[] = []) {
     const db = await dbPromise;
     return db.run(sql, params);
