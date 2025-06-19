@@ -1,26 +1,35 @@
-import { ChatLayout } from '@/components/ChatLayout';
-import { ChatProvider } from '@/lib/chat-context';
 import { db } from '@/lib/db';
 import { getServerSession } from '@/lib/auth-server';
 import { redirect } from 'next/navigation';
 import SplitChatColumn from '@/components/SplitChatColumn';
 
-// Next.js app directory: searchParams is always an object, not a Promise, unless using generateMetadata or generateStaticParams
-// But let's be defensive and support both
+// Props passed to app route pages follow Next.js `PageProps`.
+// `searchParams` is already resolved, so we don't need Promise handling.
 
-type SplitChatPageProps = { searchParams?: { chats?: string } } | Promise<{ searchParams?: { chats?: string } }>;
+interface SplitChatPageProps {
+  searchParams?: Promise<Record<string, string | string[]>>;
+}
 
-export default async function SplitChatPage(props: SplitChatPageProps) {
-  // Await if props is a Promise
-  const resolvedProps = await props;
-  const searchParams = await resolvedProps.searchParams || {};
-
+export default async function SplitChatPage({ searchParams }: SplitChatPageProps) {
   const session = await getServerSession();
   if (!session?.user?.id) {
     redirect('/auth');
   }
 
-  const chatIds: string[] = (searchParams.chats || '').split(',').filter(Boolean).slice(0, 3);
+  const resolvedSearchParams = (await searchParams) ?? {};
+
+  // Extract up to 3 chat IDs from the `chats` query string (comma-separated).
+  let chatIds: string[] = [];
+  if (resolvedSearchParams && 'chats' in resolvedSearchParams && resolvedSearchParams.chats) {
+    const raw = resolvedSearchParams.chats;
+    if (typeof raw === 'string') {
+      chatIds = raw.split(',');
+    } else if (Array.isArray(raw)) {
+      // Handle ?chats=1&chats=2 pattern.
+      chatIds = raw.flatMap((v) => v.split(','));
+    }
+    chatIds = chatIds.filter(Boolean).slice(0, 3);
+  }
 
   // Fetch chat and messages for each chatId
   const chatData = await Promise.all(
