@@ -1,6 +1,6 @@
 'use client'
 
-import { Settings } from "lucide-react"
+import { Settings, Cog, Columns3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 
@@ -8,11 +8,28 @@ import { useRouter } from "next/navigation"
 export function SettingsButton() {
   const router = useRouter();
   return (
-    <Button variant="ghost" size="icon" onClick={() => {
-      router.push('/settings');
-    }}>
-      <Settings className="h-[1.2rem] w-[1.2rem]" />
-      <span className="sr-only">Settings</span>
+    <Button
+      variant="ghost"
+      size="icon"
+      className="rounded-full"
+      onClick={() => router.push('/settings')}
+      title="Settings"
+    >
+      <Cog className="w-5 h-5" />
     </Button>
   )
+}
+
+export function SplitViewButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="rounded-full"
+      onClick={onClick}
+      title="Open Split View (Ctrl+B)"
+    >
+      <Columns3 className="w-5 h-5" />
+    </Button>
+  );
 }

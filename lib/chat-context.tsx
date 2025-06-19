@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, Dispatch, SetStateAction, useEffect } from 'react';
 import { type Message } from '@/components/ChatMessage';
 import { useSession } from '@/lib/auth-client';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, usePathname } from 'next/navigation';
 
 interface ChatContextType {
   messages: Message[];
@@ -26,6 +26,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [chatId, setChatId] = useState<string | null>(null);
   const { data: session } = useSession();
   const params = useParams();
+  const pathname = usePathname();
   const router = useRouter();
   const userId = session?.user?.id;
 
@@ -39,16 +40,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   // Sync chatId with URL params
   useEffect(() => {
-    const urlChatId = params?.id as string;
+    const urlChatId = params?.id as string | undefined;
     if (urlChatId && urlChatId !== chatId) {
       setChatId(urlChatId);
       // Don't clear messages here - let the ChatLayout handle loading
-    } else if (!urlChatId && chatId) {
-      // If we're on home page but have a chatId, clear it
+    } else if (!urlChatId && chatId && pathname === '/') {
+      // Clear only when we're truly on the home page, not on other chat routes like /chat/split
       setChatId(null);
       setMessages([]);
     }
-  }, [params?.id, chatId]);
+  }, [params?.id, chatId, pathname]);
 
   const handleSendMessage = useCallback(async (messageContent: string) => {
     if (!userId) {

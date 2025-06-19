@@ -275,8 +275,9 @@ export async function POST(req: Request) {
 
                 try {
                   const parsed = JSON.parse(data);
-                  const content = parsed.choices[0]?.delta?.content;
-                  const reasoning = parsed.choices[0]?.delta?.reasoning;
+                  const firstChoice = Array.isArray(parsed.choices) && parsed.choices.length > 0 ? parsed.choices[0] : undefined;
+                  const content = firstChoice?.delta?.content ?? firstChoice?.message?.content ?? '';
+                  const reasoning = firstChoice?.delta?.reasoning;
                   if (reasoning) {
                     if (!assistantResponse.includes('<think>')) {
                       await writer.write(encoder.encode('<think>'));

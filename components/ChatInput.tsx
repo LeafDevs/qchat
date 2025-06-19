@@ -13,9 +13,10 @@ interface ChatInputProps {
   currentModel: string
   onModelChange: (model: string) => void
   availableModels?: ModelConfig[]
+  fullWidth?: boolean
 }
 
-export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange, availableModels }: ChatInputProps) {
+export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange, availableModels, fullWidth = false }: ChatInputProps) {
   const [input, setInput] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -49,7 +50,7 @@ export function ChatInput({ onSubmit, isLoading, currentModel, onModelChange, av
       transition={{ duration: 0.3 }}
       className="bg-gradient-to-t from-background via-background/95 to-background/80 backdrop-blur-md border-t border-border/50 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.3)]"
     >
-      <div className="max-w-[40%] mx-auto px-3 sm:px-6 py-4">
+      <div className={cn(fullWidth ? 'max-w-full' : 'max-w-[40%]', 'mx-auto px-3 sm:px-6 py-4')}>
         <form onSubmit={handleSubmit} className="relative">
           <motion.div
             animate={{

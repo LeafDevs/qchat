@@ -1,10 +1,12 @@
+## This branch is for testing the SPLIT view for chats to open multiple chats at a time (maximum of 3)
+
 # QChat
 
-A modern chat interface for interacting with various AI models. Built for Theo's Cloneathon.
+A modern chat interfac e for interacting with various AI models. Built for Theo's Cloneathon.
 
 ## Features
 
-- Support for multiple AI providers (OpenAI, Anthropic, Google, Ollama, OpenRouter)
+- Support for multiple AI providers (OpenAI, Google, OpenRouter)
 - Real-time streaming responses
 - Modern, responsive UI with animations
 - Model selection dropdown
