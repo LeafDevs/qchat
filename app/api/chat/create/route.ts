@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { userId, model = 'gpt-4' } = await req.json();
+    const { userId, model = 'gpt-4', title = null } = await req.json();
     
     if (!userId) {
       return NextResponse.json(
@@ -17,8 +17,8 @@ export async function POST(req: Request) {
 
     // Create the chat
     await db.run(
-      'INSERT INTO chat (id, createdBy, model, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)',
-      [chatId, userId, model, now, now]
+      'INSERT INTO chat (id, createdBy, model, title, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)',
+      [chatId, userId, model, title, now, now]
     );
 
     // Add the user as a participant

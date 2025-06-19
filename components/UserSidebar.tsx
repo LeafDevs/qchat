@@ -1,6 +1,6 @@
 'use client'
 
-import { LogOut, MessageSquare, Plus, User, Trash2, MoreVertical } from "lucide-react"
+import { LogOut, MessageSquare, Plus, User, Trash2, MoreVertical, GitBranch } from "lucide-react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { useSession, signOut } from "@/lib/auth-client"
@@ -31,9 +31,11 @@ import { toast } from "sonner"
 interface Chat {
   id: string;
   model: string;
+  title?: string;
   lastMessage?: string;
   lastMessageTime?: string;
   updatedAt: string;
+  parentChatId?: string;
 }
 
 export function AppSidebar() {
@@ -108,7 +110,7 @@ export function AppSidebar() {
     }
   };
 
-  const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
+  const handleDeleteChat = async (chatId: string, e: React.MouseEvent<Element, MouseEvent>) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -169,14 +171,16 @@ export function AppSidebar() {
           : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
       )}
     >
-      <div className="flex-1 min-w-0">
-        <p className="truncate">{chat.lastMessage || 'New Chat'}</p>
-        <p className="text-xs text-muted-foreground">
-          {new Date(chat.lastMessageTime || chat.updatedAt).toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })}
-        </p>
+      <div className="flex-1 min-w-0 flex items-center gap-1">
+        <span className="flex items-center gap-1">
+          {chat.title && chat.title.startsWith('[BRANCH] ')
+            ? <>
+                <GitBranch className="w-3 h-3 text-muted-foreground ml-1" />
+                <span className="truncate">{chat.title.replace('[BRANCH] ', '')}</span>
+              </>
+            : <span className="truncate m-0">{chat.title || chat.lastMessage || 'New Chat'}</span>
+          }
+        </span>
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -192,7 +196,7 @@ export function AppSidebar() {
         <DropdownMenuContent align="end">
           <DropdownMenuItem
             className="text-destructive focus:text-destructive"
-            onClick={(e) => handleDeleteChat(chat.id, e)}
+            onClick={(e: React.MouseEvent<HTMLDivElement, MouseEvent>) => handleDeleteChat(chat.id, e)}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             Delete

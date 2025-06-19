@@ -5,13 +5,15 @@ import { type Message } from "@/components/ChatMessage";
 import { useState, useRef, useEffect } from "react";
 import { useSession } from "@/lib/auth-client";
 import { useChat } from "@/lib/chat-context";
+import { GitBranch } from "lucide-react";
 
 interface ChatLayoutProps {
   initialChatId?: string;
   initialMessages?: Message[];
+  isBranched?: boolean;
 }
 
-export function ChatLayout({ initialChatId, initialMessages = [] }: ChatLayoutProps) {
+export function ChatLayout({ initialChatId, initialMessages = [], isBranched = false }: ChatLayoutProps) {
   const [error, setError] = useState<string | null>(null)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const lastContentRef = useRef<{ [key: string]: string }>({})
@@ -103,6 +105,12 @@ export function ChatLayout({ initialChatId, initialMessages = [] }: ChatLayoutPr
 
   return (
     <div className="flex flex-col h-full">
+      {isBranched && (
+        <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground bg-muted/30 border-b border-border">
+          <GitBranch className="w-3 h-3" />
+          <span>This chat is branched from a previous conversation</span>
+        </div>
+      )}
       {error && (
         <div className="bg-destructive/10 text-destructive px-4 py-2 text-sm">
           {error}

@@ -24,6 +24,9 @@ async function ensureTables() {
       id TEXT PRIMARY KEY,
       createdBy TEXT,
       model TEXT,
+      title TEXT,
+      parentChatId TEXT,
+      branchMessageId TEXT,
       createdAt DATETIME,
       updatedAt DATETIME
     );
@@ -146,6 +149,25 @@ async function ensureTables() {
     if (!hasEnabledColumn) {
       await db.exec(`ALTER TABLE apiKey ADD COLUMN enabled BOOLEAN DEFAULT true`);
       console.log('Added enabled column to apiKey table');
+    }
+
+    // NEW: Ensure chat table has parentChatId and branchMessageId columns
+    const chatTableInfo = await db.all("PRAGMA table_info(chat)");
+    const hasTitle = chatTableInfo.some((col: any) => col.name === 'title');
+    const hasParentChatId = chatTableInfo.some((col: any) => col.name === 'parentChatId');
+    const hasBranchMessageId = chatTableInfo.some((col: any) => col.name === 'branchMessageId');
+
+    if (!hasTitle) {
+      await db.exec(`ALTER TABLE chat ADD COLUMN title TEXT`);
+      console.log('Added title column to chat table');
+    }
+    if (!hasParentChatId) {
+      await db.exec(`ALTER TABLE chat ADD COLUMN parentChatId TEXT`);
+      console.log('Added parentChatId column to chat table');
+    }
+    if (!hasBranchMessageId) {
+      await db.exec(`ALTER TABLE chat ADD COLUMN branchMessageId TEXT`);
+      console.log('Added branchMessageId column to chat table');
     }
 
   } catch (error) {

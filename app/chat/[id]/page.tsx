@@ -46,10 +46,13 @@ export default async function ChatPage({ params }: ChatPageProps) {
     thinking: msg.thinking || undefined
   }));
 
+  const isBranched = !!chat.parentChatId;
+
   return (
     <ChatLayout 
       initialChatId={chatId}
       initialMessages={formattedMessages} 
+      isBranched={isBranched}
     />
   );
 }

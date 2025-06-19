@@ -18,6 +18,7 @@ export async function GET(req: Request) {
       SELECT 
         c.id,
         c.model,
+        c.title,
         c.createdAt,
         c.updatedAt,
         (
